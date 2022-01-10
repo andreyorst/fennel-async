@@ -490,6 +490,31 @@ Doesn't block/park when polling agents."
     {: deref} (p:deref timeout timeout-val)
     _ (error (.. "unsupported reference type " _))))
 
+(fn shuffle! [t]
+  (for [i (length t) 2 -1]
+    (let [j (math.random i)
+          ti (. t i)]
+      (tset t i (. t j))
+      (tset t j ti)))
+  t)
+
+(fn async.alt [...]
+  "Wait for several promises simultaneously, return the value of the
+first one ready. Argument order doesn't matter, because the poll order
+is shuffled.  For a more non deterministic outcome, call
+`math.randomseed` with some seed."
+  (let [promises (shuffle! (t/pack ...))
+        coroutine? (in-coroutine?)]
+    (var the-one nil)
+    (while (not the-one)
+      (each [_ p (ipairs promises)]
+        (when p.ready
+          (set the-one p))
+        (if coroutine?
+            (async.park)
+            (async.run :once))))
+    (the-one:deref)))
+
 (setmetatable
  async
  {:__call (fn [_ task]
