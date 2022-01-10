@@ -69,7 +69,7 @@
       (error "no clock function available on this system")))
 
 
-;;; Async
+;;; Scheduler
 
 (local park-condition
   (setmetatable {} {:__name "park" :__fennelview pp}))
@@ -78,22 +78,6 @@
   (setmetatable {} {:__name "sleep" :__fennelview pp}))
 
 (local async {})
-
-(fn in-coroutine? []
-  ;; Backward-compatible test for checking if running inside of a
-  ;; coroutine.
-  (let [(c main?) (c/running)]
-    (and c (not main?))))
-
-(fn async.park []
-  "Manually park the current thread.
-
-Does nothing on the main thread."
-  (when (in-coroutine?)
-    (c/yield park-condition)))
-
-
-;;; Scheduler
 
 (local scheduler
   {:queue []})
@@ -108,8 +92,6 @@ Does nothing on the main thread."
                              :promise p})
     p))
 
-(local m/min math.min)
-
 (fn set-suspend-state! [state]
   ;; Set thread's state to the suspended state
   (doto state
@@ -122,6 +104,7 @@ Does nothing on the main thread."
     (tset :wake-time wake-time)
     (tset :status :sleep)))
 
+(local m/min math.min)
 (fn set-shortest-time! [sleep-time]
   ;; Sets the shortest time scheduler can spent sleeping before going
   ;; to the next iteration.
@@ -167,9 +150,11 @@ Does nothing on the main thread."
         queue scheduler.queue]
     (set scheduler.shortest-sleep-time nil)
     (each [thread state (pairs scheduler.queue)]
+      (set scheduler.current-thread thread)
       (match state.status
         :suspended (do-task thread state)
         :sleep (do-sleep thread state)))
+    (set scheduler.current-thread nil)
     (values (if (next queue) true false)
             (- (clock) start-time)
             (match scheduler.shortest-sleep-time
@@ -185,19 +170,26 @@ Supported modes:
   May block forever, if some tasks never finish."
   (var run? true)
   (if (or (= mode :tasks) (= nil mode))
-      (when (not (in-coroutine?))
+      (when (not scheduler.current-thread)
         (while run?
           (let [(more? _ sleep-time) (scheduler.run)]
             (set run? more?)
             (when sleep-time
               (scheduler.sleep sleep-time true)))))
       (= :once mode)
-      (when (not (in-coroutine?))
+      (when (not scheduler.current-thread)
         (let [(more? _ sleep-time) (scheduler.run)]
           (set run? more?)
           (when sleep-time
             (scheduler.sleep sleep-time true))))
       (error (.. "unsupported mode" (tostring mode)))))
+
+(fn async.park []
+  "Manually park the current thread.
+
+Does nothing on the main thread."
+  (when scheduler.current-thread
+    (c/yield park-condition)))
 
 (fn async.queue [task]
   "Enqueue a `task` and return a promise object for that task.  The
@@ -223,7 +215,7 @@ module table is an alias to this function."
 
 (fn scheduler.sleep [s block?]
   (assert (= :number (type s)) "time must be a number")
-  (if (in-coroutine?)
+  (if scheduler.current-thread
       (c/yield sleep-condition (+ (clock) s))
       (do
         (var slept 0)
@@ -258,7 +250,7 @@ runs the tasks.  If luasocket is available, blocking is done via
   (when (= self.state :error)
     (error self.error))
 
-  (let [coroutine? (in-coroutine?)]
+  (let [coroutine? scheduler.current-thread]
     (var slept 0)
     (if timeout
         (let [timeout (/ timeout 1000)]
@@ -316,7 +308,7 @@ See `agent' on how to create and use agents."
                        (tset :state :error)
                        (tset :error msg)
                        (tset :val nil)))))
-    (when (not (in-coroutine?))
+    (when (not scheduler.current-thread)
       (async.run :once))
     nil))
 
@@ -365,7 +357,7 @@ When the buffer is full, puts will park/block the thread."
                                   (assert (not= nil val) "value must not be nil")
                                   (let [size buffer.size]
                                     (while (>= (length buffer) size)
-                                      (if (in-coroutine?)
+                                      (if scheduler.current-thread
                                           (c/yield park-condition)
                                           (async.run :once)))
                                     (tset buffer (+ 1 (length buffer)) val)))}}))
@@ -404,7 +396,7 @@ sleeps this amount of milliseconds until the value is delivered.  If a
 value wasn't delivered, returns the `timeout-val`."
   (var slept 0)
   (let [buffer chan.buffer
-        coroutine? (in-coroutine?)]
+        coroutine? scheduler.current-thread]
     (if timeout
         (let [timeout (/ timeout 1000)]
           (while (and (= 0 (length buffer)) (< slept timeout))
@@ -454,7 +446,7 @@ contain nils."
                       (tset :val val)
                       (tset :ready true))
                     true))]
-    (when (not (in-coroutine?))
+    (when (not scheduler.current-thread)
       (async.run :once))
     res))
 
@@ -490,7 +482,7 @@ Does nothing if promise was already delivered."
                       (tset :state :error)
                       (tset :error err))
                     true))]
-    (when (not (in-coroutine?))
+    (when (not scheduler.current-thread)
       (async.run :once))
     res))
 
@@ -508,7 +500,7 @@ first one ready. Argument order doesn't matter, because the poll order
 is shuffled.  For a more non deterministic outcome, call
 `math.randomseed` with some seed."
   (let [promises (shuffle! (t/pack ...))
-        coroutine? (in-coroutine?)]
+        coroutine? scheduler.current-thread]
     (var the-one nil)
     (while (not the-one)
       (each [_ p (ipairs promises)]
