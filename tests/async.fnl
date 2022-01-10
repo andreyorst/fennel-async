@@ -6,6 +6,7 @@
         : sleep
         : promise
         : error!
+        : alt
         : deliver
         : zip
         : agent
@@ -19,6 +20,8 @@
         : dropping-buffer
         &as async}
   (require :async))
+
+(use-fixtures :each (fn [t] (t) (run)))
 
 (deftest promise-test
   (testing "promise internal structure"
@@ -78,7 +81,7 @@
     (assert-not (pcall dropping-buffer))
     (assert-not (pcall dropping-buffer "10"))))
 
-(deftest channel-test
+(deftest chan-test
   (testing "channel internal structure"
     (let [c1 (chan)
           c2 (chan 10)
@@ -125,11 +128,26 @@
       (assert-eq (take c) "e")
       (assert-eq c {:buffer {1 "f" :size 1}})
       (assert-eq (take c) "f")))
+  (testing "blocking take"
+    (let [c (chan)]
+      (queue #(do (sleep 100) (put c 42)))
+      (assert-eq (take c 10) nil)
+      (assert-eq (take c) 42)))
+  (testing "asynchronous take"
+    (let [c (chan)]
+      (var res nil)
+      (queue #(set res (take c)))
+      (assert-eq res nil)
+      (run :once)
+      (put c 42)
+      (assert-eq res 42)))
   (testing "take with timeout"
     (let [c (chan 1)]
       (assert-eq :no-value (take c 10 :no-value))
       (put c "g")
-      (assert-eq "g" (take c 0 :no-value)))))
+      (assert-eq "g" (take c 0 :no-value))))
+  (testing "incorrect size type"
+    (assert-not (pcall chan "1"))))
 
 (deftest await-test
   (testing "await promise"
@@ -142,12 +160,19 @@
   (testing "await promise with timeout"
     (let [p (promise)]
       (var res nil)
-      (queue #(set res (await p 0 :not-delivered)))
+      (queue #(set res (await p 100 :not-delivered)))
+      (async.run)
       (assert-eq res :not-delivered)
       (deliver p 20)
       (assert-eq res :not-delivered)
-      (queue #(set res (await p 10 :not-delivered)))
+      (queue #(set res (await p 100 :not-delivered)))
       (assert-eq res 20)))
+  (testing "await promise with timeout synchronously"
+    (let [p (promise)]
+      (var res nil)
+      (queue #(do (sleep 100) (deliver p 2000)))
+      (assert-eq nil (await p 10))
+      (assert-eq 2000 (await p))))
   (testing "await multiple promises"
     (let [p1 (promise)
           p2 (promise)]
@@ -166,12 +191,12 @@
     (assert-eq res 100)))
 
 (deftest sleep-test
-  (testing "all tasks sleep"
-    (var res 0)
-    (zip (queue #(do (sleep 100) (set res (+ res 1))))
-         (queue #(do (sleep 100) (set res (+ res 2))))
-         (queue #(do (sleep 100) (set res (+ res 3)))))
-    (assert-eq res 6))
+  ;; (testing "all tasks sleep"
+  ;;   (var res 0)
+  ;;   (zip (queue #(do (sleep 100) (set res (+ res 1))))
+  ;;        (queue #(do (sleep 100) (set res (+ res 2))))
+  ;;        (queue #(do (sleep 100) (set res (+ res 3)))))
+  ;;   (assert-eq res 6))
   (let [clock
         (match (pcall require :socket)
           (true socket) socket.gettime
@@ -184,7 +209,7 @@
         (let [cpu-start (os.clock)
               test-start (clock)
               _ (await (queue #(sleep 1000)))
-              _ (sleep 1000)
+              _ (sleep 100)
               cpu-time (- (os.clock) cpu-start)
               test-time (- (clock) test-start)]
           (assert-is (< cpu-time (/ test-time 100))
@@ -213,8 +238,26 @@
       (error! p e)
       (assert-eq 322 (match (pcall await p) (true v) v))))
   (testing "unsupported mode"
-    (assert-not (pcall run :nope))))
+    (assert-not (pcall run :nope)))
+  (testing "unsupported reference"
+    (assert-not (pcall await {}))))
 
 (deftest module-callable-test
   (testing "module can be called as function"
     (assert-is (async #nil))))
+
+(deftest alt-test
+  (testing "alt returns a random choice"
+    (let [res (alt (queue #42) (queue #43))]
+      (assert-is (or (= res 42) (= res 43)))))
+  (testing "shortest task always wins"
+    (let [res (alt (queue #(do (park) (park) (park) 44)) (queue #(do (park) 45)))]
+      (assert-eq 45 res)))
+  (testing "alt works asynchronously"
+    (let [p1 (promise)
+          p2 (promise)]
+      (var res nil)
+      (queue #(set res (alt p1 p2)))
+      (assert-eq res nil)
+      (deliver p1 46)
+      (assert-eq 46 res))))

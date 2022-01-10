@@ -1,7 +1,7 @@
 LUA ?= lua
 FENNEL ?= fennel
 VERSION ?=
-FNLSOURCES = async.fnl fennel-test/utils.fnl
+FNLSOURCES = async.fnl
 FNLMACROS =
 FNLTESTS = $(wildcard tests/*.fnl)
 LUATESTS = $(FNLTESTS:.fnl=.lua)
@@ -44,7 +44,7 @@ testall: $(LUAEXECUTABLES)
 	@$(foreach lua,$?,LUA=$(lua) make test || exit;)
 
 luacov: COMPILEFLAGS = --no-metadata --correlate
-luacov: distclean build $(LUATESTS)
+luacov: distclean build $(LUATESTS) fennel-test/utils.lua
 	@$(foreach test,$(LUATESTS),$(LUA) -lluarocks.loader -lluacov $(test) || exit;)
 	luacov
 ifdef LUACOV_COBERTURA

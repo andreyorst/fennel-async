@@ -108,7 +108,7 @@ Does nothing on the main thread."
                              :promise p})
     p))
 
-(local m/min (or math.min #(if (< $1 $2) $1 $2)))
+(local m/min math.min)
 
 (fn set-suspend-state! [state]
   ;; Set thread's state to the suspended state
@@ -276,19 +276,6 @@ runs the tasks.  If luasocket is available, blocking is done via
         timeout-val
         self.val)))
 
-(fn async.error! [p err]
-  "Set the promise `p` to error state, with `err` set as error cause.
-Does nothing if promise was already delivered."
-  (if p.ready
-      false
-      (do (doto p
-            (tset :val nil)
-            (tset :ready true)
-            (tset :state :error)
-            (tset :error err))
-          (async.run :once)
-          true)))
-
 (fn async.promise []
   "Create a promise object.
 
@@ -449,7 +436,7 @@ contain nils."
                            :number (async.buffer buffer-or-size)
                            :table buffer-or-size
                            :nil (async.buffer)
-                           _ (error (.. "wrong buffer-or-size type. Expected buffer or int, got" _)))
+                           _ (error (.. "wrong buffer-or-size type. Expected buffer or int, got: " _)))
                  : xform}
                 {:__name "channel"
                  :__fennelview pp
@@ -461,13 +448,15 @@ contain nils."
 
 (fn async.deliver [p val]
   "Deliver the value `val` to the promise `p`."
-  (if p.ready
-      false
-      (do (doto p
-            (tset :val val)
-            (tset :ready true))
-          (async.run :once)
-          true)))
+  (let [res (if p.ready
+                false
+                (do (doto p
+                      (tset :val val)
+                      (tset :ready true))
+                    true))]
+    (when (not (in-coroutine?))
+      (async.run :once))
+    res))
 
 (fn async.zip [...]
   "Await for all promises.
@@ -490,6 +479,21 @@ Doesn't block/park when polling agents."
     {: deref} (p:deref timeout timeout-val)
     _ (error (.. "unsupported reference type " _))))
 
+(fn async.error! [p err]
+  "Set the promise `p` to error state, with `err` set as error cause.
+Does nothing if promise was already delivered."
+  (let [res (if p.ready
+                false
+                (do (doto p
+                      (tset :val nil)
+                      (tset :ready true)
+                      (tset :state :error)
+                      (tset :error err))
+                    true))]
+    (when (not (in-coroutine?))
+      (async.run :once))
+    res))
+
 (fn shuffle! [t]
   (for [i (length t) 2 -1]
     (let [j (math.random i)
@@ -509,8 +513,9 @@ is shuffled.  For a more non deterministic outcome, call
     (while (not the-one)
       (each [_ p (ipairs promises)]
         (when p.ready
-          (set the-one p))
-        (if coroutine?
+          (set the-one p)))
+      (when (not the-one)
+        (if (and coroutine?)
             (async.park)
             (async.run :once))))
     (the-one:deref)))
