@@ -98,6 +98,8 @@ Does nothing on the main thread."
 (local scheduler
   {:queue []})
 
+(local internal-sleep-time 0.01)
+
 (fn scheduler.schedule [task]
   ;; Schedule a task and return a promise object
   (let [p (async.promise)
@@ -188,13 +190,13 @@ Supported modes:
           (let [(more? _ sleep-time) (scheduler.run)]
             (set run? more?)
             (when sleep-time
-              (scheduler.sleep (* 1000 sleep-time) true)))))
+              (scheduler.sleep sleep-time true)))))
       (= :once mode)
       (when (not (in-coroutine?))
         (let [(more? _ sleep-time) (scheduler.run)]
           (set run? more?)
           (when sleep-time
-            (scheduler.sleep (* 1000 sleep-time) true))))
+            (scheduler.sleep sleep-time true))))
       (error (.. "unsupported mode" (tostring mode)))))
 
 (fn async.queue [task]
@@ -219,22 +221,21 @@ module table is an alias to this function."
          (while (< (clock) end)
            nil))))
 
-(fn scheduler.sleep [ms block?]
-  (assert (= :number (type ms)) "time must be a number")
-  (let [s (/ ms 1000)]
-    (if (in-coroutine?)
-        (c/yield sleep-condition (+ (clock) s))
-        (do
-          (var slept 0)
-          (var run? true)
-          (while (and (< slept s) run?)
-            (let [(more? time-spent sleep-time) (scheduler.run)]
-              (set run? more?)
-              (set slept (+ slept time-spent (or (and block? sleep-time) 0)))
-              (when (and block? sleep-time)
-                (sleep sleep-time))))
-          (when (< slept s)
-            (sleep (- s slept)))))))
+(fn scheduler.sleep [s block?]
+  (assert (= :number (type s)) "time must be a number")
+  (if (in-coroutine?)
+      (c/yield sleep-condition (+ (clock) s))
+      (do
+        (var slept 0)
+        (var run? true)
+        (while (and (< slept s) run?)
+          (let [(more? time-spent sleep-time) (scheduler.run)]
+            (set run? more?)
+            (set slept (+ slept time-spent (or (and block? sleep-time) 0)))
+            (when (and block? sleep-time)
+              (sleep sleep-time))))
+        (when (< slept s)
+          (sleep (- s slept))))))
 
 (fn async.sleep [ms]
   "Sleep specified amount of `ms`
@@ -244,7 +245,7 @@ Otherwise, if invoked in the main thread, blocks the execution and
 runs the tasks.  If luasocket is available, blocking is done via
 `socket.sleep`.  If luaposix is available, blocking is done via
 `posix.nanosleep`.  Otherwise, a busy loop is used."
-  (scheduler.sleep ms true))
+  (scheduler.sleep (/ ms 1000) true))
 
 
 ;;; Promise
@@ -256,22 +257,24 @@ runs the tasks.  If luasocket is available, blocking is done via
     (assert (= :number (type timeout)) "timeout must be a number"))
   (when (= self.state :error)
     (error self.error))
-  (var slept 0)
-  (if timeout
-      (let [timeout (/ timeout 1000)]
-        (while (and (not self.ready) (< slept timeout))
-          (let [start (clock)]
-            (if (in-coroutine?)
-                (c/yield sleep-condition (+ start 0.01))
-                (scheduler.sleep 10 false))
-            (set slept (+ slept (- (clock) start))))))
-      (while (not self.ready)
-        (if (in-coroutine?)
-            (c/yield park-condition)
-            (async.run :once))))
-  (if (and timeout (>= slept (/ timeout 1000)) (not self.ready))
-      timeout-val
-      self.val))
+
+  (let [coroutine? (in-coroutine?)]
+    (var slept 0)
+    (if timeout
+        (let [timeout (/ timeout 1000)]
+          (while (and (not self.ready) (< slept timeout))
+            (let [start (clock)]
+              (if coroutine?
+                  (c/yield sleep-condition (+ start internal-sleep-time))
+                  (scheduler.sleep internal-sleep-time false))
+              (set slept (+ slept (- (clock) start))))))
+        (while (not self.ready)
+          (if coroutine?
+              (c/yield park-condition)
+              (async.run :once))))
+    (if (and timeout (>= slept (/ timeout 1000)) (not self.ready))
+        timeout-val
+        self.val)))
 
 (fn async.error! [p err]
   "Set the promise `p` to error state, with `err` set as error cause.
@@ -413,17 +416,18 @@ dropped."
 sleeps this amount of milliseconds until the value is delivered.  If a
 value wasn't delivered, returns the `timeout-val`."
   (var slept 0)
-  (let [buffer chan.buffer]
+  (let [buffer chan.buffer
+        coroutine? (in-coroutine?)]
     (if timeout
         (let [timeout (/ timeout 1000)]
           (while (and (= 0 (length buffer)) (< slept timeout))
             (let [start (clock)]
-              (if (in-coroutine?)
-                  (c/yield sleep-condition (+ start 0.01))
-                  (scheduler.sleep 10 false))
+              (if coroutine?
+                  (c/yield sleep-condition (+ start internal-sleep-time))
+                  (scheduler.sleep internal-sleep-time false))
               (set slept (+ slept (- (clock) start))))))
         (while (= 0 (length buffer))
-          (if (in-coroutine?)
+          (if coroutine?
               (c/yield park-condition)
               (async.run :once))))
     (let [res (if (and timeout (>= slept (/ timeout 1000)) (= 0 (length buffer)))
