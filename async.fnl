@@ -515,35 +515,4 @@ is shuffled.  For a more non deterministic outcome, call
             (async.run :once))))
     (the-one:deref)))
 
-(setmetatable
- async
- {:__call (fn [_ task]
-            (async.queue task))
-  :__index {:_DESCRIPTION "A library for asynchronous programming for the Fennel language and Lua
-runtime.
-
-This library provides facilities for asynchronous programming by
-implementing a coroutine scheduler and various synchronization
-primitives.
-
-To use this library require its main module and use it as the function
-to spawn threads:
-
-``` fennel
-(local async (require :async))
-
-(local p (async.promise))
-(local thread-1 (async (fn [] (async.sleep 400) (async.deliver p 42))))
-(local thread-2 (async (fn [] (print (async.await p 100 :not-delivered)))))
-(print (async.await p))
-```
-
-In the example above a promise is created and two threads are spawned.
-The first thread sleeps for 400ms and delivers a promise.  The second
-thread awaits for promise with a timeout of 100ms and prints
-`not-delivered` because the promise wasn't realized yet.  Lastly, the
-promise is awaited in the main thread, blocking the execution, while
-threads are cooperating. As a result, `42` is printed.
-
-For more examples see the project's [wiki]().
-"}})
+(setmetatable async {:__call (fn [_ task] (async.queue task))})

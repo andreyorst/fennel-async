@@ -25,8 +25,7 @@ thread awaits for promise with a timeout of 100ms and prints
 promise is awaited in the main thread, blocking the execution, while
 threads are cooperating. As a result, `42` is printed.
 
-For more examples see the project's [wiki]().
-
+For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-async/-/wikis/home).
 
 **Table of contents**
 
@@ -37,6 +36,7 @@ For more examples see the project's [wiki]().
 - [`promise`](#promise)
 - [`deliver`](#deliver)
 - [`zip`](#zip)
+- [`alt`](#alt)
 - [`agent`](#agent)
 - [`send`](#send)
 - [`agent-error`](#agent-error)
@@ -45,6 +45,7 @@ For more examples see the project's [wiki]().
 - [`take`](#take)
 - [`buffer`](#buffer)
 - [`dropping-buffer`](#dropping-buffer)
+- [`error!`](#error)
 - [`park`](#park)
 - [`restart-agent`](#restart-agent)
 
@@ -136,6 +137,18 @@ Await for all promises.
 
 Returns a table with promise results and the number of promises under
 the `:n` key to keep any possible `nil` values.
+
+## `alt`
+Function signature:
+
+```
+(alt ...)
+```
+
+Wait for several promises simultaneously, return the value of the
+first one ready. Argument order doesn't matter, because the poll order
+is shuffled.  For a more non deterministic outcome, call
+`math.randomseed` with some seed.
 
 ## `agent`
 Function signature:
@@ -234,6 +247,16 @@ Create a dropping buffer of set `size`
 When the buffer is full puts will succeed, but the value will be
 dropped.
 
+## `error!`
+Function signature:
+
+```
+(error! p err)
+```
+
+Set the promise `p` to error state, with `err` set as error cause.
+Does nothing if promise was already delivered.
+
 ## `park`
 Function signature:
 
@@ -262,5 +285,5 @@ Copyright (C) 2021 Andrey Listopadov
 License: [MIT](https://gitlab.com/andreyorst/fennel-async/-/raw/master/LICENSE)
 
 
-<!-- Generated with Fenneldoc v0.1.7
+<!-- Generated with Fenneldoc v0.1.9-dev
      https://gitlab.com/andreyorst/fenneldoc -->
