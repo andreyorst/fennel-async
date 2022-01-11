@@ -191,13 +191,6 @@
     (assert-eq res 100)))
 
 (deftest sleep-test
-  (let [clock
-        (match (pcall require :socket)
-          (true socket) socket.gettime
-          (false) (match (pcall require :posix)
-                    (true posix) #(let [(s ms) (posix.clock_gettime)]
-                                    (tonumber (.. s "." ms)))
-                    (false) nil))])
   (testing "all tasks sleep"
     (var res 0)
     (queue #(do (sleep 100) (set res (+ res 2))))
