@@ -1,4 +1,4 @@
-;;;; async.fnl
+;;; async.fnl
 
 (comment
  MIT License
@@ -22,8 +22,6 @@
  LIABILITY‚ WHETHER IN AN ACTION OF CONTRACT‚ TORT OR OTHERWISE‚ ARISING FROM‚
  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  SOFTWARE.)
-
-;;; Utils
 
 (local {:create c/create
         :resume c/resume
@@ -69,7 +67,37 @@
       (error "no clock function available on this system")))
 
 
+;;; Queues
+
+(fn fifo []
+  ;; Agent queue.  Task order is deterministic first in first out
+  (setmetatable
+   []
+   {:__index
+    {:put (fn [self task] (t/insert self (+ 1 (length self)) task))
+     :remove (fn [self task]
+               (var done false)
+               (each [i t (ipairs self) :until done]
+                 (when (= t task)
+                   (table.remove self i)
+                   (set done true))))}}))
+
+(fn queue []
+  ;; default queue.  Task order is based on Lua hashing function
+  (setmetatable
+   {}
+   {:__index
+    {:put (fn [self task] (tset self task task))
+     :remove (fn [self task] (tset self task nil))}}))
+
+
 ;;; Scheduler
+
+(local async {})
+
+(local scheduler
+  {:queue (queue)
+   :agent-queue (fifo)})
 
 (local park-condition
   (setmetatable {} {:__name "park" :__fennelview pp}))
@@ -77,32 +105,26 @@
 (local sleep-condition
   (setmetatable {} {:__name "sleep" :__fennelview pp}))
 
-(local async {})
-
-(local scheduler
-  {:queue []})
-
 (local internal-sleep-time 0.01)
 
-(fn scheduler.schedule [task]
+(fn scheduler.schedule [queue task]
   ;; Schedule a task and return a promise object
   (let [p (async.promise)
         c (c/create (fn [] (async.deliver p (task))))]
-    (tset scheduler.queue c {:status :suspended
-                             :promise p})
+    (queue:put {:state :suspended :promise p :task c})
     p))
 
-(fn set-suspend-state! [state]
+(fn suspend! [thread]
   ;; Set thread's state to the suspended state
-  (doto state
+  (doto thread
     (tset :wake-time nil)
-    (tset :status :suspended)))
+    (tset :state :suspended)))
 
-(fn set-sleep-state! [state wake-time]
+(fn sleep! [thread wake-time]
   ;; Set thread's state to the sleeping state
-  (doto state
+  (doto thread
     (tset :wake-time wake-time)
-    (tset :status :sleep)))
+    (tset :state :sleep)))
 
 (local m/min math.min)
 (fn set-shortest-time! [sleep-time]
@@ -113,49 +135,53 @@
          t (m/min t sleep-time)
          _ sleep-time)))
 
-(fn do-task [thread state]
+(fn do-task [queue {: task : promise &as thread}]
   ;; Execute a given task once and change its state
-  (match (c/resume thread)
+  (match (c/resume task)
     (true sleep-condition wake-time)
     (let [sleep-time (- wake-time (clock))
           sleep-time (if (< sleep-time 0) 0 sleep-time)]
-      (set-sleep-state! state wake-time)
+      (sleep! thread wake-time)
       (set-shortest-time! sleep-time))
     (true park-condition)
     (do (set-shortest-time! 0)
-        (set-suspend-state! state))
+        (suspend! thread))
     (true _)
-    (if (= :dead (c/status thread))
-        (tset scheduler.queue thread nil)
-        (do (set-suspend-state! state)
+    (if (= :dead (c/status task))
+        (queue:remove thread)
+        (do (suspend! thread)
             (set-shortest-time! 0)))
-    (false msg) (do (tset scheduler.queue thread nil)
-                    (async.error! state.promise msg)
+    (false msg) (do (queue:remove thread)
+                    (async.error! promise msg)
                     (io.stderr:write
-                     "error in " (tostring thread) ": " (tostring msg) "\n"))))
+                     "error in " (tostring task) ": " (tostring msg) "\n"))))
 
-(fn do-sleep [thread state]
+(fn do-sleep [queue thread]
   ;; Check if any of the tasks can be waked up based on current time
   (let [now (clock)
-        {: wake-time} state
+        {: wake-time} thread
         sleep-time (- wake-time now)]
     (if (>= now wake-time)
-        (do-task thread state)
+        (do-task queue thread)
         (set-shortest-time! sleep-time))))
 
 (fn scheduler.run []
   ;; Run each task from the task queue.  Returns `true` if there are
   ;; remaining tasks to execute, and amount of time spent executing.
+  (set scheduler.shortest-sleep-time nil)
   (let [start-time (clock)
-        queue scheduler.queue]
-    (set scheduler.shortest-sleep-time nil)
-    (each [thread state (pairs scheduler.queue)]
-      (set scheduler.current-thread thread)
-      (match state.status
-        :suspended (do-task thread state)
-        :sleep (do-sleep thread state)))
-    (set scheduler.current-thread nil)
-    (values (if (next queue) true false)
+        {: queue : agent-queue} scheduler]
+    (each [_ queue (ipairs [queue agent-queue])]
+      (each [_ thread (pairs queue)]
+        (set scheduler.current-thread thread)
+        (match thread.state
+          :suspended (do-task queue thread)
+          :sleep (do-sleep queue thread)))
+      (set scheduler.current-thread nil))
+    (values (if (or (next queue)
+                    (next agent-queue))
+                true
+                false)
             (- (clock) start-time)
             (match scheduler.shortest-sleep-time
               (where t (> t 0)) t))))
@@ -194,7 +220,7 @@ Does nothing on the main thread."
 (fn async.queue [task]
   "Enqueue a `task` and return a promise object for that task.  The
 module table is an alias to this function."
-  (let [p (scheduler.schedule task)]
+  (let [p (scheduler.schedule scheduler.queue task)]
     (scheduler.run)
     p))
 
@@ -301,6 +327,7 @@ See `agent' on how to create and use agents."
   (assert (not= agent.state :error) "agent error")
   (let [args (t/pack ...)]
     (scheduler.schedule
+     scheduler.agent-queue
      (fn []
        (match (pcall f agent.val (t/unpack args 1 args.n))
          (true res) (set agent.val res)

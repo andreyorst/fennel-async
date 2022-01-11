@@ -191,29 +191,13 @@
     (assert-eq res 100)))
 
 (deftest sleep-test
-  ;; (testing "all tasks sleep"
-  ;;   (var res 0)
-  ;;   (zip (queue #(do (sleep 100) (set res (+ res 1))))
-  ;;        (queue #(do (sleep 100) (set res (+ res 2))))
-  ;;        (queue #(do (sleep 100) (set res (+ res 3)))))
-  ;;   (assert-eq res 6))
   (let [clock
         (match (pcall require :socket)
           (true socket) socket.gettime
           (false) (match (pcall require :posix)
                     (true posix) #(let [(s ms) (posix.clock_gettime)]
                                     (tonumber (.. s "." ms)))
-                    (false) nil))]
-    (when (and clock os.clock)
-      (testing "cpu time low"
-        (let [cpu-start (os.clock)
-              test-start (clock)
-              _ (await (queue #(sleep 1000)))
-              _ (sleep 100)
-              cpu-time (- (os.clock) cpu-start)
-              test-time (- (clock) test-start)]
-          (assert-is (< cpu-time (/ test-time 100))
-                     (string.format "non-optimal CPU usage. CPU time: %s, test time: %s" cpu-time test-time))))))
+                    (false) nil))])
   (testing "all tasks sleep"
     (var res 0)
     (queue #(do (sleep 100) (set res (+ res 2))))
