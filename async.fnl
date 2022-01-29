@@ -31,7 +31,8 @@
   coroutine)
 
 (local {:insert t/insert
-        :remove t/remove}
+        :remove t/remove
+        :concat t/concat}
   table)
 
 (local t/unpack (or table.unpack _G.unpack))
@@ -93,7 +94,7 @@
 
 ;;; Scheduler
 
-(local async {})
+(local async {:io {}})
 
 (local scheduler
   {:queue (queue)
@@ -538,5 +539,40 @@ is shuffled.  For a more non deterministic outcome, call
             (async.park)
             (async.run :once))))
     (the-one:deref)))
+
+(fn async.io.read [file]
+  "Read the `file' into a string in a non blocking way.
+Returns a promise object to be awaited."
+  (let [p (async.promise)]
+    (async.queue
+     #(with-open [f (io.open file)]
+        (var (str res len) (values "" [] 0))
+        (while str
+          (set str (f:read 1024))
+          (when str
+            (set len (+ len 1))
+            (tset res len str)
+            (async.park)))
+        (async.deliver p (t/concat res))))
+    p))
+
+(fn async.io.write [...]
+  "Write the `data' to the `file' in a non blocking way.
+Returns a promise object which will be set to `true' once the write is
+complete.  Accepts optional `mode`.  By default the `mode` is set to
+`\"w\"`."
+  (let [(file mode data)
+        (match (values (select "#" ...) ...)
+          (2 file data) (values file :w data)
+          (3 file mode data) ...
+          (_) (error (.. "wrong amount of arguments: expected 2 or 3, got " _) 2))
+        p (async.promise)]
+    (async.queue
+     #(with-open [f (io.open file mode)]
+        (each [c (string.gmatch data ".")]
+          (f:write c)
+          (async.park))
+        (async.deliver p true)))
+    p))
 
 (setmetatable async {:__call (fn [_ task] (async.queue task))})

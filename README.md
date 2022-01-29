@@ -4,7 +4,6 @@ A library for asynchronous programming in Fennel and Lua.
 
 This library provides facilities for asynchronous programming implemented in pure Fennel, as well as a set of synchronization primitives.
 It optionally requires either [luasocket](https://w3.impa.br/~diego/software/luasocket) or [luaposix](http://luaposix.github.io/luaposix/) for real `sleep` support, but will work without those with unnecessary CPU usage as a result.
-No asynchronous IO is implemented at the moment.
 
 ## Installation
 

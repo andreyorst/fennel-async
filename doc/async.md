@@ -46,6 +46,7 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`buffer`](#buffer)
 - [`dropping-buffer`](#dropping-buffer)
 - [`error!`](#error)
+- [`io`](#io)
 - [`park`](#park)
 - [`restart-agent`](#restart-agent)
 
@@ -256,6 +257,32 @@ Function signature:
 
 Set the promise `p` to error state, with `err` set as error cause.
 Does nothing if promise was already delivered.
+
+## `io`
+Very basic asynchronous file IO.
+
+### `io.read`
+Function signature:
+
+```
+(read file)
+```
+
+Read the `file` into a string in a non blocking way.
+Returns a promise object to be awaited.
+
+### `io.write`
+Function signature:
+
+```
+(write file data)
+(write file mode data)
+```
+
+Write the `data` to the `file` in a non blocking way.
+Returns a promise object which will be set to `true` once the write is
+complete.  Accepts optional `mode`.  By default the `mode` is set to
+`"w"`.
 
 ## `park`
 Function signature:
