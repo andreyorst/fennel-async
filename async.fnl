@@ -563,8 +563,8 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
 `\"w\"`."
   (let [(file mode data)
         (match (values (select "#" ...) ...)
-          (2 file data) (values file :w data)
-          (3 file mode data) ...
+          (2 ?file ?data) (values ?file :w ?data)
+          (3) ...
           (_) (error (.. "wrong amount of arguments: expected 2 or 3, got " _) 2))
         p (async.promise)]
     (async.queue
