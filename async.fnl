@@ -542,10 +542,15 @@ is shuffled.  For a more non deterministic outcome, call
 
 (fn async.io.read [file]
   "Read the `file' into a string in a non blocking way.
-Returns a promise object to be awaited."
-  (let [p (async.promise)]
+Returns a promise object to be awaited.  `file' can be a string or a
+file handle.  The resource will be closed once operation is complete."
+  (let [p (async.promise)
+        fh (match (type file)
+             :string (io.open file)
+             :userdata file
+             _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))]
     (async.queue
-     #(with-open [f (io.open file)]
+     #(with-open [f fh]
         (var (str res len) (values "" [] 0))
         (while str
           (set str (f:read 1024))
@@ -565,10 +570,14 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
         (match (values (select "#" ...) ...)
           (2 ?file ?data) (values ?file :w ?data)
           (3) ...
-          (_) (error (.. "wrong amount of arguments: expected 2 or 3, got " _) 2))
+          (_) (error (: "wrong amount of arguments (expected 2 or 3, got %s) " :format _) 2))
+        fh (match (type file)
+             :string (io.open file mode)
+             :userdata file
+             _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))
         p (async.promise)]
     (async.queue
-     #(with-open [f (io.open file mode)]
+     #(with-open [f fh]
         (each [c (string.gmatch data ".")]
           (f:write c)
           (async.park))
