@@ -546,7 +546,9 @@ Returns a promise object to be awaited.  `file' can be a string or a
 file handle.  The resource will be closed once operation is complete."
   (let [p (async.promise)
         fh (match (type file)
-             :string (io.open file)
+             :string (match (io.open file mode)
+                       fh* fh*
+                       (nil msg) (error msg 2))
              :userdata file
              _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))]
     (async.queue
@@ -572,7 +574,9 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
           (3) ...
           (_) (error (: "wrong amount of arguments (expected 2 or 3, got %s) " :format _) 2))
         fh (match (type file)
-             :string (io.open file mode)
+             :string (match (io.open file mode)
+                       fh* fh*
+                       (nil msg) (error msg 2))
              :userdata file
              _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))
         p (async.promise)]
