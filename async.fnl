@@ -540,17 +540,24 @@ is shuffled.  For a more non deterministic outcome, call
             (async.run :once))))
     (the-one:deref)))
 
+(fn file? [f]
+  (if (and (= :userdata (type f))
+           (string.match (tostring f) "file"))
+    true
+    false))
+
 (fn async.io.read [file]
   "Read the `file' into a string in a non blocking way.
 Returns a promise object to be awaited.  `file' can be a string or a
 file handle.  The resource will be closed once operation is complete."
   (let [p (async.promise)
-        fh (match (type file)
-             :string (match (io.open file mode)
-                       fh* fh*
-                       (nil msg) (error msg 2))
-             :userdata file
-             _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))]
+        fh (if (= :string (type file))
+               (match (io.open file)
+                 fh* fh*
+                 (nil msg) (error msg 2))
+               (file? file)
+               file
+               (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format (type file)) 2))]
     (async.queue
      #(with-open [f fh]
         (var (str res len) (values "" [] 0))
@@ -573,12 +580,13 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
           (2 ?file ?data) (values ?file :w ?data)
           (3) ...
           (_) (error (: "wrong amount of arguments (expected 2 or 3, got %s) " :format _) 2))
-        fh (match (type file)
-             :string (match (io.open file mode)
-                       fh* fh*
-                       (nil msg) (error msg 2))
-             :userdata file
-             _ (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format _) 2))
+        fh (if (= :string (type file))
+               (match (io.open file mode)
+                 fh* fh*
+                 (nil msg) (error msg 2))
+               (file? file)
+               file
+               (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format (type file)) 2))
         p (async.promise)]
     (async.queue
      #(with-open [f fh]
