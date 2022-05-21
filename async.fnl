@@ -472,11 +472,12 @@ ignore a value, `xform` must return `nil`.  Channels themselves can't
 contain nils.
 
 Buffer is an object with two methods `put' and `take'. When the put
-operation can be preformed, the `put' method should put yhe value into
-yhe buffer and return `true'. Otherwise, it should return `false' and
+operation can be preformed, the `put' method should put the value into
+the buffer and return `true'. Otherwise, it should return `false' and
 not perform any actions. Similarly, when the value can't be taken from
 the buffer, the `take' method must return `nil', and a value
-otherwise. See `buffer` and `dropping-buffer` for examples."
+otherwise. Buffers can't have nils as values. See `buffer` and
+`dropping-buffer` for examples."
   (setmetatable {:buffer (match (type buffer-or-size)
                            :number (async.buffer buffer-or-size)
                            :table buffer-or-size
