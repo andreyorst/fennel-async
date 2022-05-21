@@ -277,21 +277,21 @@ runs the tasks.  If luasocket is available, blocking is done via
   (when (= self.state :error)
     (error self.error))
 
-  (let [coroutine? scheduler.current-thread]
+  (let [coroutine? scheduler.current-thread
+        timeout (and timeout (/ timeout 1000))]
     (var slept 0)
     (if timeout
-        (let [timeout (/ timeout 1000)]
-          (while (and (not self.ready) (< slept timeout))
-            (let [start (clock)]
-              (if coroutine?
-                  (c/yield sleep-condition (+ start internal-sleep-time))
-                  (scheduler.sleep internal-sleep-time false))
-              (set slept (+ slept (- (clock) start))))))
+        (while (and (not self.ready) (< slept timeout))
+          (let [start (clock)]
+            (if coroutine?
+                (c/yield sleep-condition (+ start internal-sleep-time))
+                (scheduler.sleep internal-sleep-time false))
+            (set slept (+ slept (- (clock) start)))))
         (while (not self.ready)
           (if coroutine?
               (c/yield park-condition)
               (async.run :once))))
-    (if (and timeout (>= slept (/ timeout 1000)) (not self.ready))
+    (if (and timeout (>= slept timeout) (not self.ready))
         timeout-val
         self.val)))
 
