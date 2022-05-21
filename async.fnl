@@ -388,8 +388,8 @@ When the buffer is full, puts will park/block the thread."
                                             true)
                                         false)))
                            :take (fn [buffer]
-                                   (if (> (length buffer) 0)
-                                       (t/remove buffer 1)))}}))
+                                   (when (> (length buffer) 0)
+                                     (t/remove buffer 1)))}}))
 
 (fn async.dropping-buffer [size]
   "Create a dropping buffer of set `size`
@@ -406,8 +406,8 @@ dropped."
                                     (tset buffer (+ 1 (length buffer)) val))
                                   true)
                            :take (fn [buffer]
-                                   (if (> (length buffer) 0)
-                                       (t/remove buffer 1)))}}))
+                                   (when (> (length buffer) 0)
+                                     (t/remove buffer 1)))}}))
 
 
 ;;; Channels
@@ -436,17 +436,17 @@ value wasn't delivered, returns the `timeout-val`."
   (var slept 0)
   (let [coroutine? scheduler.current-thread
         buffer chan.buffer
+        timeout (and timeout (/ timeout 1000))
         loop (if timeout
-                 (let [timeout (/ timeout 1000)]
-                   (fn loop [val]
-                     (if (and (= nil val) (< slept timeout))
-                         (let [start (clock)]
-                           (if coroutine?
-                               (c/yield sleep-condition (+ start internal-sleep-time))
-                               (scheduler.sleep internal-sleep-time false))
-                           (set slept (+ slept (- (clock) start)))
-                           (loop (buffer:take)))
-                         val)))
+                 (fn loop [val]
+                   (if (and (= nil val) (< slept timeout))
+                       (let [start (clock)]
+                         (if coroutine?
+                             (c/yield sleep-condition (+ start internal-sleep-time))
+                             (scheduler.sleep internal-sleep-time false))
+                         (set slept (+ slept (- (clock) start)))
+                         (loop (buffer:take)))
+                       val))
                  (fn loop [val]
                    (if (= nil val)
                        (do (if coroutine?
@@ -454,10 +454,10 @@ value wasn't delivered, returns the `timeout-val`."
                                (async.run :once))
                            (loop (buffer:take)))
                        val)))
-        val (loop (buffer:take))
-        res (if (and timeout (>= slept (/ timeout 1000)) (= nil val))
-                timeout-val
-                val)]
+        res (match (loop (buffer:take))
+              val val
+              (where nil (and timeout (>= slept timeout))) timeout-val
+              _ nil)]
     (async.run :once)
     res))
 
