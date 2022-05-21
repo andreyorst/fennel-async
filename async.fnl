@@ -277,21 +277,21 @@ runs the tasks.  If luasocket is available, blocking is done via
   (when (= self.state :error)
     (error self.error))
 
-  (let [coroutine? scheduler.current-thread]
+  (let [coroutine? scheduler.current-thread
+        timeout (and timeout (/ timeout 1000))]
     (var slept 0)
     (if timeout
-        (let [timeout (/ timeout 1000)]
-          (while (and (not self.ready) (< slept timeout))
-            (let [start (clock)]
-              (if coroutine?
-                  (c/yield sleep-condition (+ start internal-sleep-time))
-                  (scheduler.sleep internal-sleep-time false))
-              (set slept (+ slept (- (clock) start))))))
+        (while (and (not self.ready) (< slept timeout))
+          (let [start (clock)]
+            (if coroutine?
+                (c/yield sleep-condition (+ start internal-sleep-time))
+                (scheduler.sleep internal-sleep-time false))
+            (set slept (+ slept (- (clock) start)))))
         (while (not self.ready)
           (if coroutine?
               (c/yield park-condition)
               (async.run :once))))
-    (if (and timeout (>= slept (/ timeout 1000)) (not self.ready))
+    (if (and timeout (>= slept timeout) (not self.ready))
         timeout-val
         self.val)))
 
@@ -375,46 +375,121 @@ during execution.  Use `restart-agent' to repair a failed agent."
 (fn async.buffer [size]
   "Create a buffer of set `size`.
 
-When the buffer is full, puts will park/block the thread."
+When the buffer is full, returns `false'.  Taking from the buffer must
+return `nil', if the buffer is empty.
+
+#Examples
+
+The simplest implementation of a fixed-size buffer defines the `put'
+method to check if the length of the buffer is less than the specified
+size. The `take' method checks if the length of the buffer is empty.
+Putting a value to the buffer must never block.
+
+```fennel
+(fn blocking-buffer [size]
+  {:put (fn [buffer val]
+          (if (< (length buffer) size)
+              (do (table.insert buffer val)
+                  true)
+              false))
+   :take (fn [buffer]
+           (when (> (length buffer) 0)
+             (table.remove buffer 1)))})
+
+(let [b (blocking-buffer 2)]
+  (assert-is (b:put 42))
+  (assert-is (b:put 27))
+  ;; can't put any more values
+  (assert-not (b:put 72))
+
+  (assert-eq 42 (b:take))
+  (assert-eq 27 (b:take))
+  ;; buffer is empty, nothing to return
+  (assert-eq nil (b:take)))
+```
+
+By design of this library, buffers can't contain `nil' values, and
+`nil' is reserved as a marker of an empty buffer."
   (and size (assert (= :number (type size)) "size must be a number"))
   (assert (not (: (tostring size) :match "%.")) "size must be integer")
   (setmetatable {:size (or size math.huge)}
                 {:__name "buffer"
                  :__fennelview pp
                  :__index {:put (fn [buffer val]
-                                  (assert (not= nil val) "value must not be nil")
-                                  (let [size buffer.size]
-                                    (while (>= (length buffer) size)
-                                      (if scheduler.current-thread
-                                          (c/yield park-condition)
-                                          (async.run :once)))
-                                    (tset buffer (+ 1 (length buffer)) val)))}}))
+                                  (let [len (length buffer)]
+                                    (if (< len buffer.size)
+                                        (do (tset buffer (+ 1 len) val)
+                                            true)
+                                        false)))
+                           :take (fn [buffer]
+                                   (when (> (length buffer) 0)
+                                     (t/remove buffer 1)))}}))
 
 (fn async.dropping-buffer [size]
   "Create a dropping buffer of set `size`
 
 When the buffer is full puts will succeed, but the value will be
-dropped."
+dropped.
+
+# Examples
+
+Putting a value into dropping buffer always succeeds, because the
+value can be dropped if the buffer is full. Here's the simplest
+implementation of a dropping buffer:
+
+```fennel
+(fn dropping-buffer [size]
+  {:put (fn [buffer val]
+          (when (< (length buffer) size)
+            (table.insert buffer val))
+          true)
+   :take (fn [buffer]
+           (when (> (length buffer) 0)
+             (table.remove buffer 1)))})
+
+(let [b (dropping-buffer 2)]
+  (assert-is (b:put 42))
+  (assert-is (b:put 27))
+  ;; can't put any more values, but put is successful
+  (assert-is (b:put 72))
+
+  (assert-eq 42 (b:take))
+  (assert-eq 27 (b:take))
+  ;; buffer is empty, nothing to return
+  (assert-eq nil (b:take)))
+```
+
+See `buffer` for more info."
   (assert (= :number (type size)) "size must be a number")
   (assert (not (: (tostring size) :match "%.")) "size must be integer")
   (setmetatable {:size size}
                 {:__name "dropping buffer"
                  :__fennelview pp
                  :__index {:put (fn [buffer val]
-                                  (assert (not= nil val) "value must not be nil")
-                                  (when (< (length buffer) buffer.size)
-                                    (tset buffer (+ 1 (length buffer)) val)))}}))
+                                  (when (< (length buffer) size)
+                                    (tset buffer (+ 1 (length buffer)) val))
+                                  true)
+                           :take (fn [buffer]
+                                   (when (> (length buffer) 0)
+                                     (t/remove buffer 1)))}}))
 
 
 ;;; Channels
+
+(fn put [buffer val]
+  (assert (not= nil val) "value must not be nil")
+  (while (not (buffer:put val))
+    (if scheduler.current-thread
+        (c/yield park-condition)
+        (async.run :once))))
 
 (fn async.put [chan val]
   "Put a value `val` to a channel `chan`."
   (let [{: buffer : xform} chan]
     (if xform
         (match (xform val)
-          val* (buffer:put val*))
-        (buffer:put val))
+          val* (put buffer val*))
+        (put buffer val))
     (async.run :once)
     true))
 
@@ -423,25 +498,32 @@ dropped."
 sleeps this amount of milliseconds until the value is delivered.  If a
 value wasn't delivered, returns the `timeout-val`."
   (var slept 0)
-  (let [buffer chan.buffer
-        coroutine? scheduler.current-thread]
-    (if timeout
-        (let [timeout (/ timeout 1000)]
-          (while (and (= 0 (length buffer)) (< slept timeout))
-            (let [start (clock)]
-              (if coroutine?
-                  (c/yield sleep-condition (+ start internal-sleep-time))
-                  (scheduler.sleep internal-sleep-time false))
-              (set slept (+ slept (- (clock) start))))))
-        (while (= 0 (length buffer))
-          (if coroutine?
-              (c/yield park-condition)
-              (async.run :once))))
-    (let [res (if (and timeout (>= slept (/ timeout 1000)) (= 0 (length buffer)))
-                  timeout-val
-                  (t/remove buffer 1))]
-      (async.run :once)
-      res)))
+  (let [coroutine? scheduler.current-thread
+        buffer chan.buffer
+        timeout (and timeout (/ timeout 1000))
+        loop (if timeout
+                 (fn loop [val]
+                   (if (and (= nil val) (< slept timeout))
+                       (let [start (clock)]
+                         (if coroutine?
+                             (c/yield sleep-condition (+ start internal-sleep-time))
+                             (scheduler.sleep internal-sleep-time false))
+                         (set slept (+ slept (- (clock) start)))
+                         (loop (buffer:take)))
+                       val))
+                 (fn loop [val]
+                   (if (= nil val)
+                       (do (if coroutine?
+                               (c/yield park-condition)
+                               (async.run :once))
+                           (loop (buffer:take)))
+                       val)))
+        res (match (loop (buffer:take))
+              val val
+              (where nil (and timeout (>= slept timeout))) timeout-val
+              _ nil)]
+    (async.run :once)
+    res))
 
 (fn async.chan [buffer-or-size xform]
   "Create a channel with a set buffer and an optional transforming function.
@@ -451,7 +533,15 @@ buffer, or a buffer object.  The `xform` parameter is a function that
 is invoked on the element before putting it to the channel.  The
 result of this function will be put into the channel instead.  To
 ignore a value, `xform` must return `nil`.  Channels themselves can't
-contain nils."
+contain nils.
+
+Buffer is an object with two methods `put' and `take'. When the put
+operation can be preformed, the `put' method should put the value into
+the buffer and return `true'. Otherwise, it should return `false' and
+not perform any actions. Similarly, when the value can't be taken from
+the buffer, the `take' method must return `nil', and a value
+otherwise. Buffers can't have nils as values. See `buffer` and
+`dropping-buffer` for examples."
   (setmetatable {:buffer (match (type buffer-or-size)
                            :number (async.buffer buffer-or-size)
                            :table buffer-or-size
