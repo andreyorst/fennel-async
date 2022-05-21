@@ -205,6 +205,14 @@ result of this function will be put into the channel instead.  To
 ignore a value, `xform` must return `nil`.  Channels themselves can't
 contain nils.
 
+Buffer is an object with two methods [`put`](#put) and [`take`](#take). When the put
+operation can be preformed, the [`put`](#put) method should put the value into
+the buffer and return `true`. Otherwise, it should return `false` and
+not perform any actions. Similarly, when the value can't be taken from
+the buffer, the [`take`](#take) method must return `nil`, and a value
+otherwise. Buffers can't have nils as values. See `buffer` and
+`dropping-buffer` for examples.
+
 ## `put`
 Function signature:
 
@@ -234,7 +242,41 @@ Function signature:
 
 Create a buffer of set `size`.
 
-When the buffer is full, puts will park/block the thread.
+When the buffer is full, returns `false`.  Taking from the buffer must
+return `nil`, if the buffer is empty.
+
+#Examples
+
+The simplest implementation of a fixed-size buffer defines the [`put`](#put)
+method to check if the length of the buffer is less than the specified
+size. The [`take`](#take) method checks if the length of the buffer is empty.
+Putting a value to the buffer must never block.
+
+```fennel
+(fn blocking-buffer [size]
+  {:put (fn [buffer val]
+          (if (< (length buffer) size)
+              (do (table.insert buffer val)
+                  true)
+              false))
+   :take (fn [buffer]
+           (when (> (length buffer) 0)
+             (table.remove buffer 1)))})
+
+(let [b (blocking-buffer 2)]
+  (assert-is (b:put 42))
+  (assert-is (b:put 27))
+  ;; can`t put any more values
+  (assert-not (b:put 72))
+
+  (assert-eq 42 (b:take))
+  (assert-eq 27 (b:take))
+  ;; buffer is empty, nothing to return
+  (assert-eq nil (b:take)))
+```
+
+By design of this library, buffers can't contain `nil` values, and
+`nil` is reserved as a marker of an empty buffer.
 
 ## `dropping-buffer`
 Function signature:
@@ -247,6 +289,36 @@ Create a dropping buffer of set `size`
 
 When the buffer is full puts will succeed, but the value will be
 dropped.
+
+### Examples
+
+Putting a value into dropping buffer always succeeds, because the
+value can be dropped if the buffer is full. Here's the simplest
+implementation of a dropping buffer:
+
+```fennel
+(fn dropping-buffer [size]
+  {:put (fn [buffer val]
+          (when (< (length buffer) size)
+            (table.insert buffer val))
+          true)
+   :take (fn [buffer]
+           (when (> (length buffer) 0)
+             (table.remove buffer 1)))})
+
+(let [b (dropping-buffer 2)]
+  (assert-is (b:put 42))
+  (assert-is (b:put 27))
+  ;; can`t put any more values, but put is successful
+  (assert-is (b:put 72))
+
+  (assert-eq 42 (b:take))
+  (assert-eq 27 (b:take))
+  ;; buffer is empty, nothing to return
+  (assert-eq nil (b:take)))
+```
+
+See `buffer` for more info.
 
 ## `error!`
 Function signature:
