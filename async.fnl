@@ -222,7 +222,8 @@ Does nothing on the main thread."
   "Enqueue a `task` and return a promise object for that task.  The
 module table is an alias to this function."
   (let [p (scheduler.schedule scheduler.queue task)]
-    (scheduler.run)
+    (when (not scheduler.current-thread)
+      (scheduler.run))
     p))
 
 
