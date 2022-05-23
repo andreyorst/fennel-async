@@ -36,7 +36,11 @@
   table)
 
 (local t/unpack (or table.unpack _G.unpack))
+
 (fn t/pack [...] (doto [...] (tset :n (select "#" ...))))
+
+(fn t/append [t val]
+  (doto t (tset (+ 1 (length t)) val)))
 
 (fn pp [self]
   (.. "#<" (tostring self) ">"))
@@ -637,6 +641,8 @@ is shuffled.  For a more non deterministic outcome, call
     true
     false))
 
+;;; IO
+
 (fn async.io.read [file]
   "Read the `file' into a string in a non blocking way.
 Returns a promise object to be awaited.  `file' can be a string or a
@@ -686,5 +692,80 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
           (async.park))
         (async.deliver p true)))
     p))
+
+;;; TCP
+
+(local tcp {})
+(local closed {})
+
+(fn make-socket-channel [client]
+  (let [buffer (setmetatable
+                {}
+                {:__name "socket-buffer"
+                 :__fennelview pp
+                 :__index {:put (fn put [_ val i]
+                                  (match (client:send val i)
+                                    (nil :timeout j)
+                                    (do (async.park)
+                                        (put _ val j))
+                                    (nil :closed) (do (client:close) closed)
+                                    _ true))
+                           :take (fn take [_ data]
+                                   (match (client:receive 256)
+                                     data* (do (print :ok)
+                                               (t/concat (t/append (or data []) data*)))
+                                     (nil :closed data*)
+                                     (do (client:close)
+                                         closed)
+                                     (nil :timeout "") (and data (t/concat data))
+                                     (nil :timeout data*)
+                                     (do (async.park)
+                                         (take _ (t/append (or data []) data*)))
+                                     (nil _) (print _)))}})]
+    (async.chan buffer)))
+
+(fn make-server-channel [server]
+  (let [buffer (setmetatable
+                {}
+                {:__name "socket-server-buffer"
+                 :__fennelview pp
+                 :__index {:take #(match (server:accept)
+                                    client (doto client (: :settimeout 0))
+                                    _ nil)
+                           :put #true}})]
+    (async.chan buffer)))
+
+(fn spawn-client-thread [client handler]
+  (async.queue
+   (fn loop []
+     (match (async.take client 10)
+       closed nil
+       data (do (->> data handler (async.put client))
+                (loop))
+       nil (loop)))))
+
+(fn spawn-accept-thread [server handler]
+  (async.queue
+   #(while true
+      (match-try (async.take server 100)
+        client (make-socket-channel client)
+        chan (spawn-client-thread chan handler)))))
+
+(fn tcp.start-server [handler {: host : port}]
+  (match-try (socket.bind (if (not= host nil) host :localhost)
+                          (if (not= port nil) port 0))
+    server (server:settimeout 0)
+    _ (io.stdout:write (string.format "server started at %s:%s\n" (server:getsockname)))
+    _ (make-server-channel server)
+    chan (spawn-accept-thread chan handler)
+    (catch
+     (nil err) (io.stderr:write "unable to start server: " err "\n"))))
+
+(fn tcp.connect [{: host : port}]
+  (match-try (socket.connect host port)
+    client (client:settimeout 0)
+    _ (make-socket-channel client)))
+
+(when socket (set async.tcp tcp))
 
 (setmetatable async {:__call (fn [_ task] (async.queue task))})
