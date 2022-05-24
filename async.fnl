@@ -693,78 +693,133 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
         (async.deliver p true)))
     p))
 
-;;; TCP
+;;; TCP (experimental)
 
 (local tcp {})
 (local closed {})
+(local conns {})         ; stores server objects and their connections
 
-(fn make-socket-channel [client]
-  (let [buffer (setmetatable
-                {}
-                {:__name "socket-buffer"
-                 :__fennelview pp
-                 :__index {:put (fn put [_ val i]
-                                  (match (client:send val i)
-                                    (nil :timeout j)
-                                    (do (async.park)
-                                        (put _ val j))
-                                    (nil :closed) (do (client:close) closed)
-                                    _ true))
-                           :take (fn take [_ data]
-                                   (match (client:receive 256)
-                                     data* (do (print :ok)
-                                               (t/concat (t/append (or data []) data*)))
-                                     (nil :closed data*)
-                                     (do (client:close)
-                                         closed)
-                                     (nil :timeout "") (and data (t/concat data))
-                                     (nil :timeout data*)
+(fn make-socket-channel [client close-handler]
+  ;; Creates a buffer for a given client socket. The buffer may park
+  ;; for more data.
+  (->> {:__name "socket-buffer"
+        :__fennelview pp
+        :__index {:put (fn put [_ val i]
+                         (match (socket.select nil [client] 0)
+                           (_ [c]) (match (client:send val i)
+                                     (nil :timeout j)
                                      (do (async.park)
-                                         (take _ (t/append (or data []) data*)))
-                                     (nil _) (print _)))}})]
-    (async.chan buffer)))
+                                         (put _ val j))
+                                     (nil :closed)
+                                     (close-handler client)
+                                     _ true)
+                           _ false))
+                  :take (fn take [_ data]
+                          (match (socket.select [client] nil 0)
+                            [c] (match (client:receive 256)
+                                  data* (do (async.park)
+                                            (take _ (t/append (or data []) data*)))
+                                  (nil :closed data*)
+                                  (close-handler client)
+                                  (nil :timeout "")
+                                  (and data (t/concat data))
+                                  (nil :timeout data*)
+                                  (do (async.park)
+                                      (take _ (t/append (or data []) data*)))
+                                  (nil _) (print _))
+                            _ (and data (t/concat data))))}}
+       (setmetatable {})
+       async.chan))
 
 (fn make-server-channel [server]
-  (let [buffer (setmetatable
-                {}
-                {:__name "socket-server-buffer"
-                 :__fennelview pp
-                 :__index {:take #(match (server:accept)
-                                    client (doto client (: :settimeout 0))
-                                    _ nil)
-                           :put #true}})]
-    (async.chan buffer)))
+  ;; Creates a buffer for a given server socket. The buffer is used to
+  ;; receive new connections.
+  (->> {:__name "socket-server-buffer"
+        :__fennelview pp
+        :__index {:take #(match (server:accept)
+                           client (do (client:settimeout 0)
+                                      (tset conns server client true)
+                                      client)
+                           _ nil)
+                  :put #true}}
+       (setmetatable {})
+       async.chan))
 
-(fn spawn-client-thread [client handler]
+(fn spawn-client-thread [client handler server]
+  ;; Spawns a client thread that asynchronously takes from the client
+  ;; socket and calls the `handler' when all data was read.
   (async.queue
    (fn loop []
      (match (async.take client 10)
        closed nil
-       data (do (->> data handler (async.put client))
+       data (let [res (handler data)]
+              (when server.running?
+                (async.put client))
                 (loop))
-       nil (loop)))))
+       nil (when server.running?
+             (loop))))))
 
 (fn spawn-accept-thread [server handler]
-  (async.queue
-   #(while true
-      (match-try (async.take server 100)
-        client (make-socket-channel client)
-        chan (spawn-client-thread chan handler)))))
+  ;; Spawns a thread that waits for new connections. For each
+  ;; connection it spawns a separate thread that calls the `handler'
+  ;; on each received value.
+  (let [server-chan server.chan
+        server-socket server.socket]
+    (async.queue
+     #(while server.running?
+        (match-try (async.take server-chan 100)
+          client (make-socket-channel client
+                                      (fn [client]
+                                        (client:close)
+                                        (tset conns server-socket client nil)
+                                        closed))
+          chan (spawn-client-thread chan handler server))))))
 
 (fn tcp.start-server [handler {: host : port}]
+  "Start socket server on a given `host` and `port` with `handler` being
+ran for every connection on separate asynchronous threads.
+
+# Examples
+Starting a server, connecting a client, sending, and receiving a value:
+
+```fennel
+(local [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
+        client (tcp.connect {:host :localhost :port 88881})]
+  (put client 41)
+  (assert-eq 42 (tonumber (take client))))
+```"
   (match-try (socket.bind (if (not= host nil) host :localhost)
                           (if (not= port nil) port 0))
     server (server:settimeout 0)
-    _ (io.stdout:write (string.format "server started at %s:%s\n" (server:getsockname)))
+    _ (tset conns server {})
     _ (make-server-channel server)
+    server-chan (->> {:__index {:close (fn [self]
+                                         (set self.running? false)
+                                         (each [client (pairs (. conns server))]
+                                           (client:close))
+                                         (server:close))}}
+                     (setmetatable {:chan server-chan
+                                    :socket server
+                                    :running? true}))
     chan (spawn-accept-thread chan handler)
+    _ (io.stdout:write (string.format "server started at %s:%s\n" (server:getsockname)))
+    _ chan
     (catch
-     (nil err) (io.stderr:write "unable to start server: " err "\n"))))
+     (nil err) (error (.. "unable to start the server: " err)))))
+
+(fn tcp.stop-server [server]
+  "Stop the `server` obtained from the `start-server` function.
+This also closes all connections, and stops any threads that currently
+processing data received from clients."
+  (server:close))
 
 (fn tcp.connect [{: host : port}]
+  "Connect to the server."
   (match-try (socket.connect host port)
     client (client:settimeout 0)
-    _ (make-socket-channel client)))
+    _ (make-socket-channel client (fn [] (client:close) nil))
+    (catch
+     (nil err) (error err))))
 
 (when socket (set async.tcp tcp))
 
