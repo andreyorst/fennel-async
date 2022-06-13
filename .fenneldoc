@@ -1,5 +1,5 @@
 ;; -*- mode: fennel; -*- vi:ft=fennel
-;; Configuration file for Fenneldoc v0.1.9-dev
+;; Configuration file for Fenneldoc v0.1.9
 ;; https://gitlab.com/andreyorst/fenneldoc
 
 {:fennel-path {}
@@ -41,10 +41,12 @@ promise is awaited in the main thread, blocking the execution, while
 threads are cooperating. As a result, `42` is printed.
 
 For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-async/-/wikis/home)."
-                            :doc-order ["queue" "run" "await" "sleep"
-                                        "promise" "deliver" "zip" "alt"
-                                        "agent" "send" "agent-error"
-                                        "chan" "put" "take" "buffer" "dropping-buffer"]}}
+                            :doc-order ["queue" "run" "await" "sleep" "park"
+                                        "promise" "deliver" "error!" "zip" "alt"
+                                        "agent" "send" "agent-error" "restart-agent"
+                                        "chan" "put" "take" "buffer" "dropping-buffer"
+                                        "io.read" "io.write"
+                                        "tcp.start-server" "tcp.connect" "tcp.stop-server"]}}
  :project-license "[MIT](https://gitlab.com/andreyorst/fennel-async/-/raw/master/LICENSE)"
  :project-version "v0.0.1"
  :sandbox false

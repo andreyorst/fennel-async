@@ -33,22 +33,26 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`run`](#run)
 - [`await`](#await)
 - [`sleep`](#sleep)
+- [`park`](#park)
 - [`promise`](#promise)
 - [`deliver`](#deliver)
+- [`error!`](#error)
 - [`zip`](#zip)
 - [`alt`](#alt)
 - [`agent`](#agent)
 - [`send`](#send)
 - [`agent-error`](#agent-error)
+- [`restart-agent`](#restart-agent)
 - [`chan`](#chan)
 - [`put`](#put)
 - [`take`](#take)
 - [`buffer`](#buffer)
 - [`dropping-buffer`](#dropping-buffer)
-- [`error!`](#error)
-- [`io`](#io)
-- [`park`](#park)
-- [`restart-agent`](#restart-agent)
+- [`io.read`](#ioread)
+- [`io.write`](#iowrite)
+- [`tcp.start-server`](#tcpstart-server)
+- [`tcp.connect`](#tcpconnect)
+- [`tcp.stop-server`](#tcpstop-server)
 
 ## `queue`
 Function signature:
@@ -104,6 +108,17 @@ runs the tasks.  If luasocket is available, blocking is done via
 `socket.sleep`.  If luaposix is available, blocking is done via
 `posix.nanosleep`.  Otherwise, a busy loop is used.
 
+## `park`
+Function signature:
+
+```
+(park)
+```
+
+Manually park the current thread.
+
+Does nothing on the main thread.
+
 ## `promise`
 Function signature:
 
@@ -126,6 +141,16 @@ Function signature:
 ```
 
 Deliver the value `val` to the promise `p`.
+
+## `error!`
+Function signature:
+
+```
+(error! p err)
+```
+
+Set the promise `p` to error state, with `err` set as error cause.
+Does nothing if promise was already delivered.
 
 ## `zip`
 Function signature:
@@ -188,6 +213,15 @@ Function signature:
 
 Return the error object from the `agent` if the agent failed.
 Otherwise returns nil.
+
+## `restart-agent`
+Function signature:
+
+```
+(restart-agent agent val)
+```
+
+Restart the `agent` with a given `val`.
 
 ## `chan`
 Function signature:
@@ -320,35 +354,22 @@ implementation of a dropping buffer:
 
 See `buffer` for more info.
 
-## `error!`
+## `io.read`
 Function signature:
 
 ```
-(error! p err)
-```
-
-Set the promise `p` to error state, with `err` set as error cause.
-Does nothing if promise was already delivered.
-
-## `io`
-Very basic asynchronous file IO.
-
-### `io.read`
-Function signature:
-
-```
-(read file)
+(io.read file)
 ```
 
 Read the `file` into a string in a non blocking way.
-Returns a promise object to be awaited.
+Returns a promise object to be awaited.  `file` can be a string or a
+file handle.  The resource will be closed once operation is complete.
 
-### `io.write`
+## `io.write`
 Function signature:
 
 ```
-(write file data)
-(write file mode data)
+(io.write ...)
 ```
 
 Write the `data` to the `file` in a non blocking way.
@@ -356,25 +377,45 @@ Returns a promise object which will be set to `true` once the write is
 complete.  Accepts optional `mode`.  By default the `mode` is set to
 `"w"`.
 
-## `park`
+## `tcp.start-server`
 Function signature:
 
 ```
-(park)
+(tcp.start-server handler {:port port :host host})
 ```
 
-Manually park the current thread.
+Start socket server on a given `host` and `port` with `handler` being
+ran for every connection on separate asynchronous threads.
 
-Does nothing on the main thread.
+### Examples
+Starting a server, connecting a client, sending, and receiving a value:
 
-## `restart-agent`
+```fennel
+(let [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
+      client (tcp.connect {:host :localhost :port 88881})]
+  (put client 41)
+  (assert-eq 42 (tonumber (take client))))
+```
+
+## `tcp.connect`
 Function signature:
 
 ```
-(restart-agent agent val)
+(tcp.connect {:port port :host host})
 ```
 
-Restart the `agent` with a given `val`.
+Connect to the server via `host` and `port`.
+
+## `tcp.stop-server`
+Function signature:
+
+```
+(tcp.stop-server server)
+```
+
+Stop the `server` obtained from the `start-server` function.
+This also closes all connections, and stops any threads that currently
+processing data received from clients.
 
 
 ---
@@ -384,5 +425,5 @@ Copyright (C) 2021 Andrey Listopadov
 License: [MIT](https://gitlab.com/andreyorst/fennel-async/-/raw/master/LICENSE)
 
 
-<!-- Generated with Fenneldoc v0.1.9-dev
+<!-- Generated with Fenneldoc v0.1.9
      https://gitlab.com/andreyorst/fenneldoc -->
