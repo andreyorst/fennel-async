@@ -6,8 +6,8 @@ stages:
 
 variables:
     GIT_SUBMODULE_STRATEGY: recursive
-    fennel_ver: 1.0.0
-    fenneldoc_ver: v0.1.8
+    fennel_ver: 1.1.0
+    fenneldoc_ver: v0.1.9
 
 .install_fennel: &fennel |-
     cd "$HOME"
