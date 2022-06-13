@@ -754,7 +754,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
        closed nil
        data (let [res (handler data)]
               (when server.running?
-                (async.put client))
+                (async.put client res))
                 (loop))
        nil (when server.running?
              (loop))))))
@@ -783,8 +783,8 @@ ran for every connection on separate asynchronous threads.
 Starting a server, connecting a client, sending, and receiving a value:
 
 ```fennel
-(local [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
-        client (tcp.connect {:host :localhost :port 88881})]
+(let [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
+      client (tcp.connect {:host :localhost :port 88881})]
   (put client 41)
   (assert-eq 42 (tonumber (take client))))
 ```"
@@ -814,7 +814,7 @@ processing data received from clients."
   (server:close))
 
 (fn tcp.connect [{: host : port}]
-  "Connect to the server."
+  "Connect to the server via `host` and `port`."
   (match-try (socket.connect host port)
     client (client:settimeout 0)
     _ (make-socket-channel client (fn [] (client:close) nil))
