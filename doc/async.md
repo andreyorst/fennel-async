@@ -18,7 +18,7 @@ to spawn threads:
 (print (async.await p))
 ```
 
-In the example above a promise is created and two threads are spawned.
+In the example above a promise is created, and two threads are spawned.
 The first thread sleeps for 400ms and delivers a promise.  The second
 thread awaits for promise with a timeout of 100ms and prints
 `not-delivered` because the promise wasn't realized yet.  Lastly, the
@@ -383,7 +383,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
 Function signature:
 
 ```
-(tcp.start-server handler {:host host :port port})
+(tcp.start-server handler {:port port :host host})
 ```
 
 Start socket server on a given `host` and `port` with `handler` being
@@ -404,7 +404,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 Function signature:
 
 ```
-(tcp.connect {:host host :port port})
+(tcp.connect {:port port :host host})
 ```
 
 Connect to the server via `host` and `port`.
