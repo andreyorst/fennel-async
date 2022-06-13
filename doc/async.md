@@ -53,6 +53,8 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`tcp.start-server`](#tcpstart-server)
 - [`tcp.connect`](#tcpconnect)
 - [`tcp.stop-server`](#tcpstop-server)
+- [`tcp.gethost`](#tcpgethost)
+- [`tcp.getport`](#tcpgetport)
 
 ## `queue`
 Function signature:
@@ -381,7 +383,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
 Function signature:
 
 ```
-(tcp.start-server handler {:port port :host host})
+(tcp.start-server handler {:host host :port port})
 ```
 
 Start socket server on a given `host` and `port` with `handler` being
@@ -390,9 +392,10 @@ ran for every connection on separate asynchronous threads.
 ### Examples
 Starting a server, connecting a client, sending, and receiving a value:
 
-```fennel
-(let [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
-      client (tcp.connect {:host :localhost :port 88881})]
+``` fennel
+(let [server (tcp.start-server #(+ 1 (tonumber $)) {})
+      port (tcp.getport server)
+      client (tcp.connect {:host :localhost :port port})]
   (put client 41)
   (assert-eq 42 (tonumber (take client))))
 ```
@@ -401,7 +404,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 Function signature:
 
 ```
-(tcp.connect {:port port :host host})
+(tcp.connect {:host host :port port})
 ```
 
 Connect to the server via `host` and `port`.
@@ -416,6 +419,24 @@ Function signature:
 Stop the `server` obtained from the `start-server` function.
 This also closes all connections, and stops any threads that currently
 processing data received from clients.
+
+## `tcp.gethost`
+Function signature:
+
+```
+(tcp.gethost {:socket server})
+```
+
+Get the hostname of the `server`.
+
+## `tcp.getport`
+Function signature:
+
+```
+(tcp.getport {:socket server})
+```
+
+Get the port of the `server`.
 
 
 ---

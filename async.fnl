@@ -782,9 +782,10 @@ ran for every connection on separate asynchronous threads.
 # Examples
 Starting a server, connecting a client, sending, and receiving a value:
 
-```fennel
-(let [server (tcp.start-server #(+ 1 (tonumber $)) {:port 88881})
-      client (tcp.connect {:host :localhost :port 88881})]
+``` fennel
+(let [server (tcp.start-server #(+ 1 (tonumber $)) {})
+      port (tcp.getport server)
+      client (tcp.connect {:host :localhost :port port})]
   (put client 41)
   (assert-eq 42 (tonumber (take client))))
 ```"
@@ -805,7 +806,7 @@ Starting a server, connecting a client, sending, and receiving a value:
     _ (io.stdout:write (string.format "server started at %s:%s\n" (server:getsockname)))
     _ chan
     (catch
-     (nil err) (error (.. "unable to start the server: " err)))))
+        (nil err) (error (.. "unable to start the server: " err)))))
 
 (fn tcp.stop-server [server]
   "Stop the `server` obtained from the `start-server` function.
@@ -819,7 +820,16 @@ processing data received from clients."
     client (client:settimeout 0)
     _ (make-socket-channel client (fn [] (client:close) nil))
     (catch
-     (nil err) (error err))))
+        (nil err) (error err))))
+
+(fn tcp.gethost [{:socket server}]
+  "Get the hostname of the `server`."
+  (pick-values 1 (server:getsockname)))
+
+(fn tcp.getport [{:socket server}]
+  "Get the port of the `server`."
+  (let [(_ port) (server:getsockname)]
+    port))
 
 (when socket (set async.tcp tcp))
 
