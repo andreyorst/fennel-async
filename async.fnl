@@ -831,6 +831,48 @@ processing data received from clients."
   (let [(_ port) (server:getsockname)]
     port))
 
+(fn async-repl [data-chan ?opts]
+  (var output [])
+  (var p nil)
+  (var err nil)
+  (let [opts (or ?opts {})]
+    (fn opts.readChunk [{: stack-size}]
+      (when (> stack-size 0)
+        (set err "unfinished expression")
+        (error nil))
+      (when (and (> (length output) 0) p)
+        (async.deliver p (.. (table.concat output "\t") "\n")))
+      ((fn loop []
+         (match (async.take data-chan 100)
+           [p* chunk]
+           (do
+             (set p p*)
+             (set output [])
+             (and chunk (.. chunk "\n")))
+           nil (loop)))))
+    (fn opts.onValues [x]
+      (table.insert output (table.concat x "\t")))
+    (fn opts.onError [_ e]
+      (table.insert output (.. "error: " (or e err))))
+    (match (pcall require :fennel)
+      (true fennel) (async.queue #(fennel.repl opts))
+      (_ msg) (error (.. "unable to load fennel: " msg)))))
+
+(fn string-trim [s]
+  (: (s:gsub "^%s+" "") :gsub "%s+$" ""))
+
+(fn tcp.start-repl [conn opts]
+  "Create a socket REPL with given `conn` and `opts`."
+  (let [data-chan (async.chan)]
+    (async-repl data-chan opts)
+    (tcp.start-server (fn [data]
+                        (match (string-trim data)
+                          "" "nil\n"
+                          data* (let [p (async.promise)]
+                                  (async.put data-chan [p data*])
+                                  (async.await p))))
+                      conn)))
+
 (when socket (set async.tcp tcp))
 
 (setmetatable async {:__call (fn [_ task] (async.queue task))})
