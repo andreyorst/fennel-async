@@ -832,31 +832,34 @@ processing data received from clients."
     port))
 
 (fn async-repl [data-chan ?opts]
-  (var output [])
-  (var p nil)
-  (var err nil)
-  (let [opts (or ?opts {})]
-    (fn opts.readChunk [{: stack-size}]
-      (when (> stack-size 0)
-        (set err "unfinished expression")
-        (error nil))
-      (when (and (> (length output) 0) p)
-        (async.deliver p (.. (table.concat output "\t") "\n")))
-      ((fn loop []
-         (match (async.take data-chan 100)
-           [p* chunk]
-           (do
-             (set p p*)
-             (set output [])
-             (and chunk (.. chunk "\n")))
-           nil (loop)))))
-    (fn opts.onValues [x]
-      (table.insert output (table.concat x "\t")))
-    (fn opts.onError [_ e]
-      (table.insert output (.. "error: " (or e err))))
-    (match (pcall require :fennel)
-      (true fennel) (async.queue #(fennel.repl opts))
-      (_ msg) (error (.. "unable to load fennel: " msg)))))
+  (match (pcall require :fennel)
+    (true fennel) (let [opts (or ?opts {})]
+                    (var p nil)
+                    (fn opts.readChunk [{: stack-size}]
+                      (when (> stack-size 0)
+                        (error "unfinished expression" 0))
+                      ((fn loop []
+                         (match (async.take data-chan 100)
+                           [p* chunk]
+                           (do
+                             (set p p*)
+                             (and chunk (.. chunk "\n")))
+                           nil (loop)))))
+                    (fn opts.onValues [xs]
+                      (when p
+                        (async.deliver p (.. (table.concat xs "\t") "\n"))))
+                    (fn opts.onError [errtype err lua-source]
+                      (when p
+                        (->> (match errtype
+                               "Lua Compile" (.. "Bad code generated - likely a bug with the compiler:\n"
+                                                 "--- Generated Lua Start ---\n"
+                                                 lua-source
+                                                 "--- Generated Lua End ---\n")
+                               "Runtime" (.. (fennel.traceback (tostring err) 4) "\n")
+                               _ (: "%s error: %s\n" :format errtype (tostring err)))
+                             (async.deliver p))))
+                    (async.queue #(fennel.repl opts)))
+    (_ msg) (error (.. "unable to load fennel: " msg))))
 
 (fn string-trim [s]
   (: (s:gsub "^%s+" "") :gsub "%s+$" ""))
