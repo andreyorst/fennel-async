@@ -831,49 +831,139 @@ processing data received from clients."
   (let [(_ port) (server:getsockname)]
     port))
 
-(fn async-repl [data-chan ?opts]
-  (match (pcall require :fennel)
-    (true fennel) (let [opts (or ?opts {})]
-                    (var p nil)
-                    (fn opts.readChunk [{: stack-size}]
-                      (when (> stack-size 0)
-                        (error "unfinished expression" 0))
-                      ((fn loop []
-                         (match (async.take data-chan 100)
-                           [p* chunk]
-                           (do
-                             (set p p*)
-                             (and chunk (.. chunk "\n")))
-                           nil (loop)))))
-                    (fn opts.onValues [xs]
-                      (when p
-                        (async.deliver p (.. (table.concat xs "\t") "\n"))))
-                    (fn opts.onError [errtype err lua-source]
-                      (when p
-                        (->> (match errtype
-                               "Lua Compile" (.. "Bad code generated - likely a bug with the compiler:\n"
-                                                 "--- Generated Lua Start ---\n"
-                                                 lua-source
-                                                 "--- Generated Lua End ---\n")
-                               "Runtime" (.. (fennel.traceback (tostring err) 4) "\n")
-                               _ (: "%s error: %s\n" :format errtype (tostring err)))
-                             (async.deliver p))))
-                    (async.queue #(fennel.repl opts)))
-    (_ msg) (error (.. "unable to load fennel: " msg))))
+;;; TCP REPL
+
+(fn trim-left [s]
+  (pick-values 1 (s:gsub "^%s+" "")))
+
+(fn trim-right [s]
+  (pick-values 1 (s:gsub "%s+$" "")))
 
 (fn string-trim [s]
-  (: (s:gsub "^%s+" "") :gsub "%s+$" ""))
+  (->> s trim-left trim-right))
+
+(fn concat-args [sep ...]
+  (-> (fcollect [i 1 (select :# ...)]
+        (tostring (select i ...)))
+      (table.concat sep)))
+
+(local lua-print _G.print)
+(local io-write io.write)
+(local io-read io.read)
+(local fd-meta (. (getmetatable io.stdin) :__index))
+(local fd-write fd-meta.write)
+(local fd-read fd-meta.read)
+(var io-leftovers [])
+
+(fn set-io [client-chan]
+  ;; User input handling.  Probably the most complicated part of the REPL,
+  ;; as we have to re-implement `io.read` in Lua, and propagate unmatched
+  ;; data back to the REPL, to match `fennel.repl` semantics.  In addition
+  ;; to that file IO also has to be proxied, in order to detect when the
+  ;; `stdin`, `stdout`, and `stderr` descriptors are used.  If anyone knows
+  ;; a better/more clever way of doing it a patch is much appreciated
+  (fn read [spec]
+    (match (async.take client-chan 100)
+      data (match spec
+             :a data
+             :n (let [ (num data) (: (trim-left data) :match "^([^%s]*)(%s?.-)$")]
+                  (lua-print (string.format "%q" num))
+                  (when (not= (string-trim data) "")
+                    (table.insert io-leftovers data))
+                  (tonumber num))
+             (where x (= :number (type x)))
+             (let [line (data:sub 1 x)
+                   data (data:sub (+ x 1) -1)]
+               (when (not= (string-trim data) "")
+                 (table.insert io-leftovers data))
+               line)
+             _ (let [(line data) (data:match (if (= spec :L)
+                                                 "^(.*\n)(.-)$"
+                                                 "^(.*)(\n.-)$"))]
+                 (when (not= (string-trim data) "")
+                   (table.insert io-leftovers data))
+                 line))
+      nil (read spec)))
+  (set fd-meta.write
+       (fn [fd ...]
+         (if (or (= fd io.stdout) (= fd io.stderr))
+             (do
+               (async.put client-chan (concat-args "" ...))
+               nil)
+             (fd-write fd ...))))
+  (set io.write (fn [...]
+                  (async.put client-chan (concat-args "" ...))
+                  nil))
+  (set io.read read)
+  (set fd-meta.read (fn [fd spec]
+                      (if (= fd io.stdin)
+                          (read spec)
+                          (fd-read fd spec))))
+  (set _G.print (fn [...]
+                  (async.put client-chan (.. (concat-args "\t" ...) "\n"))
+                  nil)))
+
+(fn reset-io []
+  ;; We also have to reset all IO-related functions back to their original
+  ;; values, so that the rest of the code outside the REPL was not
+  ;; affected by our shenanigans.
+  (set fd-meta.write fd-write)
+  (set io.write io-write)
+  (set io.read io-read)
+  (set fd-meta.read fd-read)
+  (set _G.print lua-print))
+
+(fn async-repl [data-chan ?opts]
+  (match (pcall require :fennel)
+    (true fennel)
+    (let [opts (or ?opts {})]
+      (var p nil)
+      (var repl-output [])
+      (fn opts.readChunk [{: stack-size}]
+        (when (> stack-size 0)
+          (error "unfinished expression" 0))
+        (when (and p (> (length repl-output) 0))
+          (async.deliver p (.. (table.concat repl-output "\n") "\n")))
+        ((fn loop []
+           (match (async.take data-chan 100)
+             [p* chunk client-chan]
+             (do
+               (set-io client-chan)
+               (set p p*)
+               (and chunk (.. chunk "\n")))
+             nil (loop)))))
+      (fn opts.onValues [xs]
+        (reset-io)
+        (set repl-output [])
+        (table.insert repl-output (table.concat xs "\t")))
+      (fn opts.onError [errtype err lua-source]
+        (reset-io)
+        (set repl-output [])
+        (->> (match errtype
+               "Lua Compile" (.. "Bad code generated - likely a bug with the compiler:\n"
+                                 "--- Generated Lua Start ---\n"
+                                 lua-source
+                                 "--- Generated Lua End ---\n")
+               "Runtime" (.. (fennel.traceback (tostring err) 4) "\n")
+               _ (: "%s error: %s\n" :format errtype (tostring err)))
+             (table.insert repl-output)))
+      (async.queue #(fennel.repl opts)))
+    (_ msg) (error (.. "unable to load fennel: " msg))))
 
 (fn tcp.start-repl [conn opts]
   "Create a socket REPL with given `conn` and `opts`."
   (let [data-chan (async.chan)]
     (async-repl data-chan opts)
-    (tcp.start-server (fn [data]
+    (tcp.start-server (fn loop [data client-chan]
                         (match (string-trim data)
                           "" "nil\n"
                           data* (let [p (async.promise)]
-                                  (async.put data-chan [p data*])
-                                  (async.await p))))
+                                  (set io-leftovers [])
+                                  (async.put data-chan [p data* client-chan])
+                                  (let [res (async.await p)]
+                                    (if (> (length io-leftovers) 0)
+                                        (loop (table.concat io-leftovers "") client-chan)
+                                        res)))))
                       conn)))
 
 (when socket (set async.tcp tcp))
