@@ -752,7 +752,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
    (fn loop []
      (match (async.take client 10)
        closed nil
-       data (let [res (handler data)]
+       data (let [res (handler data client)]
               (when server.running?
                 (async.put client res))
                 (loop))
