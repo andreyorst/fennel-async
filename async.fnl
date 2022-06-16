@@ -843,9 +843,12 @@ processing data received from clients."
   (->> s trim-left trim-right))
 
 (fn concat-args [sep ...]
-  (-> (fcollect [i 1 (select :# ...)]
-        (tostring (select i ...)))
-      (table.concat sep)))
+  (let [t []]
+    (var len 0)
+    (for [i 1 (select :# ...)]
+      (set len (+ len 1))
+      (tset t len (tostring (select i ...))))
+    (table.concat t sep)))
 
 (local lua-print _G.print)
 (local io-write io.write)
