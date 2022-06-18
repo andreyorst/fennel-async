@@ -746,8 +746,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
                                   (and data (t/concat data))
                                   (nil :timeout data*)
                                   (do (async.park)
-                                      (take _ (t/append (or data []) data*)))
-                                  (nil _) (print _))
+                                      (take _ (t/append (or data []) data*))))
                             _ (and data (t/concat data))))}}
        (setmetatable {})
        async.chan))
@@ -869,7 +868,7 @@ processing data received from clients."
     (for [i 1 (select :# ...)]
       (set len (+ len 1))
       (tset t len (tostring (select i ...))))
-    (table.concat t sep)))
+    (t/concat t sep)))
 
 (local lua-print _G.print)
 (local io-write io.write)
@@ -877,9 +876,8 @@ processing data received from clients."
 (local fd-meta (. (getmetatable io.stdin) :__index))
 (local fd-write fd-meta.write)
 (local fd-read fd-meta.read)
-(var io-leftovers [])
 
-(fn set-io [client-chan]
+(fn set-io [client-chan io-leftovers]
   ;; User input handling.  Probably the most complicated part of the REPL,
   ;; as we have to re-implement `io.read` in Lua, and propagate unmatched
   ;; data back to the REPL, to match `fennel.repl` semantics.  In addition
@@ -887,27 +885,25 @@ processing data received from clients."
   ;; `stdin`, `stdout`, and `stderr` descriptors are used.  If anyone knows
   ;; a better/more clever way of doing it a patch is much appreciated
   (fn read [spec]
-    (match (async.take client-chan 100)
-      data (match spec
-             :a data
-             :n (let [ (num data) (: (trim-left data) :match "^([^%s]*)(%s?.-)$")]
-                  (lua-print (string.format "%q" num))
-                  (when (not= (string-trim data) "")
-                    (table.insert io-leftovers data))
-                  (tonumber num))
-             (where x (= :number (type x)))
-             (let [line (data:sub 1 x)
-                   data (data:sub (+ x 1) -1)]
-               (when (not= (string-trim data) "")
-                 (table.insert io-leftovers data))
-               line)
-             _ (let [(line data) (data:match (if (= spec :L)
-                                                 "^(.*\n)(.-)$"
-                                                 "^(.*)(\n.-)$"))]
-                 (when (not= (string-trim data) "")
-                   (table.insert io-leftovers data))
-                 line))
-      nil (read spec)))
+    (let [data (async.take client-chan)]
+      (match spec
+        :a data
+        :n (let [(num data) (: (trim-left data) :match "^([^%s]*)(%s?.-)$")]
+             (when (and data (not= (string-trim data) ""))
+               (t/insert io-leftovers data))
+             (or (tonumber num) "nil"))
+        (where x (= :number (type x)))
+        (let [line (data:sub 1 x)
+              data (data:sub (+ x 1) -1)]
+          (when (and data (not= (string-trim data) ""))
+            (t/insert io-leftovers data))
+          (or line ""))
+        _ (let [(line data) (data:match (if (= spec :L)
+                                            "^(.*\n)(.-)$"
+                                            "^(.*)(\n.-)$"))]
+            (when (and data (not= (string-trim data) ""))
+              (t/insert io-leftovers data))
+            (or line "")))))
   (set fd-meta.write
        (fn [fd ...]
          (if (or (= fd io.stdout) (= fd io.stderr))
@@ -947,19 +943,19 @@ processing data received from clients."
         (when (> stack-size 0)
           (error "unfinished expression" 0))
         (when (and p (> (length repl-output) 0))
-          (async.deliver p (.. (table.concat repl-output "\n") "\n")))
+          (async.deliver p (.. (t/concat repl-output "\n") "\n")))
         ((fn loop []
            (match (async.take data-chan 100)
-             [p* chunk client-chan]
+             [p* chunk client-chan io-leftovers]
              (do
-               (set-io client-chan)
+               (set-io client-chan io-leftovers)
                (set p p*)
                (and chunk (.. chunk "\n")))
              nil (loop)))))
       (fn opts.onValues [xs]
         (reset-io)
         (set repl-output [])
-        (table.insert repl-output (table.concat xs "\t")))
+        (t/insert repl-output (t/concat xs "\t")))
       (fn opts.onError [errtype err lua-source]
         (reset-io)
         (set repl-output [])
@@ -970,7 +966,7 @@ processing data received from clients."
                                  "--- Generated Lua End ---\n")
                "Runtime" (.. (fennel.traceback (tostring err) 4) "\n")
                _ (: "%s error: %s\n" :format errtype (tostring err)))
-             (table.insert repl-output)))
+             (t/insert repl-output)))
       (async.queue #(fennel.repl opts)))
     (_ msg) (error (.. "unable to load fennel: " msg))))
 
@@ -978,17 +974,27 @@ processing data received from clients."
   "Create a socket REPL with given `conn` and `opts`."
   (let [data-chan (async.chan)]
     (async-repl data-chan opts)
-    (tcp.start-server (fn loop [data client-chan]
-                        (match (string-trim data)
-                          "" "nil\n"
-                          data* (let [p (async.promise)]
-                                  (set io-leftovers [])
-                                  (async.put data-chan [p data* client-chan])
-                                  (let [res (async.await p)]
-                                    (if (> (length io-leftovers) 0)
-                                        (loop (table.concat io-leftovers "") client-chan)
-                                        res)))))
-                      conn)))
+    (->> {:__index {:close (fn [{:socket server &as self}]
+                             (set self.running? false)
+                             (each [client (pairs (. conns server))]
+                               (client:close))
+                             (server:close)
+                             (let [p (async.promise)]
+                               (async.put data-chan [p ",exit" nil []])))}}
+         (setmetatable (tcp.start-server (fn [data client-chan]
+                                           ((fn loop [data res]
+                                              (match (and data (string-trim data))
+                                                nil (.. res "nil\n")
+                                                "" (.. res "nil\n")
+                                                data* (let [p (async.promise)
+                                                            io-leftovers []]
+                                                        (async.put data-chan [p data* client-chan io-leftovers])
+                                                        (let [res (.. res (async.await p))]
+                                                          (if (> (length io-leftovers) 0)
+                                                              (loop (t/concat io-leftovers "") res)
+                                                              res)))))
+                                            data ""))
+                                         conn)))))
 
 (when socket (set async.tcp tcp))
 
