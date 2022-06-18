@@ -29,7 +29,7 @@ distclean: clean
 
 test: $(FNLTESTS)
 	@echo "Testing on" $$($(LUA) -v) >&2
-	@$(FENNEL) --lua $(LUA) fennel-test/runner $(FNLTESTS) || exit;
+	@$(foreach test,$?,echo $(test); $(FENNEL) --lua $(LUA) $(test) || exit;)
 ifdef FENNELDOC
 	@fenneldoc --mode check -- $(FNLDOCS) || exit
 else
