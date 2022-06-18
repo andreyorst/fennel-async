@@ -654,36 +654,38 @@ is shuffled.  For a more non deterministic outcome, call
             (async.run :once))))
     (the-one:deref)))
 
+;;; IO
+
 (fn file? [f]
   (if (and (= :userdata (type f))
            (string.match (tostring f) "file"))
-    true
-    false))
-
-;;; IO
+      true
+      false))
 
 (fn async.io.read [file]
   "Read the `file' into a string in a non blocking way.
 Returns a promise object to be awaited.  `file' can be a string or a
 file handle.  The resource will be closed once operation is complete."
-  (let [p (async.promise)
-        fh (if (= :string (type file))
-               (match (io.open file)
-                 fh* fh*
-                 (nil msg) (error msg 2))
-               (file? file)
-               file
-               (error (: "bad argument #1 to 'select' (string or FILE* expected, got %s) " :format (type file)) 2))]
+  (let [p (async.promise)]
     (async.queue
-     #(with-open [f fh]
-        (var (str res len) (values "" [] 0))
-        (while str
-          (set str (f:read 1024))
-          (when str
-            (set len (+ len 1))
-            (tset res len str)
-            (async.park)))
-        (async.deliver p (t/concat res))))
+     #(let [fh (if (= :string (type file))
+                   (match (io.open file)
+                     fh* fh*
+                     (nil msg) (async.error! p msg))
+                   (file? file)
+                   file
+                   (async.error! p (: "bad argument #1' (string or FILE* expected, got %s) " :format (type file))))]
+        (if p.ready
+            p
+            (with-open [f fh]
+              (var (str res len) (values "" [] 0))
+              (while str
+                (set str (f:read 1024))
+                (when str
+                  (set len (+ len 1))
+                  (tset res len str)
+                  (async.park)))
+              (async.deliver p (t/concat res))))))
     p))
 
 (fn async.io.write [...]
