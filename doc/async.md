@@ -45,6 +45,7 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`restart-agent`](#restart-agent)
 - [`chan`](#chan)
 - [`put`](#put)
+- [`try-put`](#try-put)
 - [`take`](#take)
 - [`buffer`](#buffer)
 - [`dropping-buffer`](#dropping-buffer)
@@ -53,8 +54,9 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`tcp.start-server`](#tcpstart-server)
 - [`tcp.connect`](#tcpconnect)
 - [`tcp.stop-server`](#tcpstop-server)
-- [`tcp.gethost`](#tcpgethost)
-- [`tcp.getport`](#tcpgetport)
+- [`tcp.get-host`](#tcpget-host)
+- [`tcp.get-port`](#tcpget-port)
+- [`tcp.start-repl`](#tcpstart-repl)
 
 ## `queue`
 Function signature:
@@ -258,6 +260,16 @@ Function signature:
 
 Put a value `val` to a channel `chan`.
 
+## `try-put`
+Function signature:
+
+```
+(try-put chan val)
+```
+
+Try to put a value `val` to a channel `chan`.
+Will not retry.
+
 ## `take`
 Function signature:
 
@@ -292,8 +304,9 @@ Putting a value to the buffer must never block.
 (fn blocking-buffer [size]
   {:put (fn [buffer val]
           (if (< (length buffer) size)
-              (do (table.insert buffer val)
-                  true)
+              (do
+                (table.insert buffer val)
+                true)
               false))
    :take (fn [buffer]
            (when (> (length buffer) 0)
@@ -394,7 +407,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 
 ``` fennel
 (let [server (tcp.start-server #(+ 1 (tonumber $)) {})
-      port (tcp.getport server)
+      port (tcp.get-port server)
       client (tcp.connect {:host :localhost :port port})]
   (put client 41)
   (assert-eq 42 (tonumber (take client))))
@@ -420,23 +433,32 @@ Stop the `server` obtained from the `start-server` function.
 This also closes all connections, and stops any threads that currently
 processing data received from clients.
 
-## `tcp.gethost`
+## `tcp.get-host`
 Function signature:
 
 ```
-(tcp.gethost {:socket server})
+(tcp.get-host {:socket server})
 ```
 
 Get the hostname of the `server`.
 
-## `tcp.getport`
+## `tcp.get-port`
 Function signature:
 
 ```
-(tcp.getport {:socket server})
+(tcp.get-port {:socket server})
 ```
 
 Get the port of the `server`.
+
+## `tcp.start-repl`
+Function signature:
+
+```
+(tcp.start-repl conn opts)
+```
+
+Create a socket REPL with given `conn` and `opts`.
 
 
 ---
