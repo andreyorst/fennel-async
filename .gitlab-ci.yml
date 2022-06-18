@@ -27,10 +27,11 @@ variables:
 Lua:
     image: alpine:edge
     stage: test
+    timeout: 2m
     before_script:
         - >
             apk add -q
-            lua5.2 lua5.3 lua5.3-dev lua5.4 luarocks5.3
+            lua5.3 lua5.3-dev lua5.4 luarocks5.3
             git make gcc musl-dev
         - export LUA=lua5.3
         - luarocks-5.3 install fennel "$fennel_ver"
@@ -40,7 +41,7 @@ Lua:
         - luarocks-5.3 install luacov-cobertura
         - *fenneldoc
     script:
-        - LUAEXECUTABLES="lua5.2 lua5.3 lua5.4" make testall
+        - LUAEXECUTABLES="lua5.3 lua5.4" make testall
         - make luacov
         - tail luacov.report
     artifacts:
@@ -57,6 +58,7 @@ Lua:
 Luajit:
     image: fedora:33
     stage: test
+    timeout: 2m
     before_script:
         - dnf install -y -q lua luajit git make
         - *fennel
