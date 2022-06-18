@@ -803,7 +803,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 
 ``` fennel
 (let [server (tcp.start-server #(+ 1 (tonumber $)) {})
-      port (tcp.getport server)
+      port (tcp.get-port server)
       client (tcp.connect {:host :localhost :port port})]
   (put client 41)
   (assert-eq 42 (tonumber (take client))))
@@ -841,11 +841,11 @@ processing data received from clients."
     (catch
         (nil err) (error err))))
 
-(fn tcp.gethost [{:socket server}]
+(fn tcp.get-host [{:socket server}]
   "Get the hostname of the `server`."
   (pick-values 1 (server:getsockname)))
 
-(fn tcp.getport [{:socket server}]
+(fn tcp.get-port [{:socket server}]
   "Get the port of the `server`."
   (let [(_ port) (server:getsockname)]
     port))
