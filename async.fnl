@@ -1,27 +1,27 @@
 ;;; async.fnl
 
 (comment
- MIT License
+  MIT License
 
- Copyright (c) 2022 Andrey Listopadov
+  Copyright (c) 2022 Andrey Listopadov
 
- Permission is hereby granted‚ free of charge‚ to any person obtaining a copy
- of this software and associated documentation files (the "Software")‚ to deal
- in the Software without restriction‚ including without limitation the rights
- to use‚ copy‚ modify‚ merge‚ publish‚ distribute‚ sublicense‚ and/or sell
- copies of the Software‚ and to permit persons to whom the Software is
- furnished to do so‚ subject to the following conditions：
+  Permission is hereby granted‚ free of charge‚ to any person obtaining a copy
+  of this software and associated documentation files (the "Software")‚ to deal
+  in the Software without restriction‚ including without limitation the rights
+  to use‚ copy‚ modify‚ merge‚ publish‚ distribute‚ sublicense‚ and/or sell
+  copies of the Software‚ and to permit persons to whom the Software is
+  furnished to do so‚ subject to the following conditions：
 
- The above copyright notice and this permission notice shall be included in all
- copies or substantial portions of the Software.
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
 
- THE SOFTWARE IS PROVIDED "AS IS"‚ WITHOUT WARRANTY OF ANY KIND‚ EXPRESS OR
- IMPLIED‚ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY‚
- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM‚ DAMAGES OR OTHER
- LIABILITY‚ WHETHER IN AN ACTION OF CONTRACT‚ TORT OR OTHERWISE‚ ARISING FROM‚
- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- SOFTWARE.)
+  THE SOFTWARE IS PROVIDED "AS IS"‚ WITHOUT WARRANTY OF ANY KIND‚ EXPRESS OR
+  IMPLIED‚ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY‚
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM‚ DAMAGES OR OTHER
+  LIABILITY‚ WHETHER IN AN ACTION OF CONTRACT‚ TORT OR OTHERWISE‚ ARISING FROM‚
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.)
 
 (local {:create c/create
         :resume c/resume
@@ -140,6 +140,8 @@
          t (m/min t sleep-time)
          _ sleep-time)))
 
+(local lp _G.print)
+
 (fn do-task [queue {: task : promise &as thread}]
   ;; Execute a given task once and change its state
   (match (c/resume task)
@@ -149,17 +151,20 @@
       (sleep! thread wake-time)
       (set-shortest-time! sleep-time))
     (true park-condition)
-    (do (set-shortest-time! 0)
-        (suspend! thread))
+    (do
+      (set-shortest-time! 0)
+      (suspend! thread))
     (true _)
     (if (= :dead (c/status task))
         (queue:remove thread)
-        (do (suspend! thread)
-            (set-shortest-time! 0)))
-    (false msg) (do (queue:remove thread)
-                    (async.error! promise msg)
-                    (io.stderr:write
-                     "error in " (tostring task) ": " (tostring msg) "\n"))))
+        (do
+          (suspend! thread)
+          (set-shortest-time! 0)))
+    (false msg) (do
+                  (queue:remove thread)
+                  (async.error! promise msg)
+                  (io.stderr:write
+                   "error in " (tostring task) ": " (tostring msg) "\n"))))
 
 (fn do-sleep [queue thread]
   ;; Check if any of the tasks can be waked up based on current time
@@ -394,8 +399,9 @@ Putting a value to the buffer must never block.
 (fn blocking-buffer [size]
   {:put (fn [buffer val]
           (if (< (length buffer) size)
-              (do (table.insert buffer val)
-                  true)
+              (do
+                (table.insert buffer val)
+                true)
               false))
    :take (fn [buffer]
            (when (> (length buffer) 0)
@@ -423,8 +429,9 @@ By design of this library, buffers can't contain `nil' values, and
                  :__index {:put (fn [buffer val]
                                   (let [len (length buffer)]
                                     (if (< len buffer.size)
-                                        (do (tset buffer (+ 1 len) val)
-                                            true)
+                                        (do
+                                          (tset buffer (+ 1 len) val)
+                                          true)
                                         false)))
                            :take (fn [buffer]
                                    (when (> (length buffer) 0)
@@ -537,10 +544,11 @@ value wasn't delivered, returns the `timeout-val`."
                        val))
                  (fn loop [val]
                    (if (= nil val)
-                       (do (if coroutine?
-                               (c/yield park-condition)
-                               (async.run :once))
-                           (loop (buffer:take)))
+                       (do
+                         (if coroutine?
+                             (c/yield park-condition)
+                             (async.run :once))
+                         (loop (buffer:take)))
                        val)))
         res (match (loop (buffer:take))
               val val
@@ -584,10 +592,11 @@ otherwise. Buffers can't have nils as values. See `buffer` and
   "Deliver the value `val` to the promise `p`."
   (let [res (if p.ready
                 false
-                (do (doto p
-                      (tset :val val)
-                      (tset :ready true))
-                    true))]
+                (do
+                  (doto p
+                    (tset :val val)
+                    (tset :ready true))
+                  true))]
     (when (not scheduler.current-thread)
       (async.run :once))
     res))
@@ -618,12 +627,13 @@ Doesn't block/park when polling agents."
 Does nothing if promise was already delivered."
   (let [res (if p.ready
                 false
-                (do (doto p
-                      (tset :val nil)
-                      (tset :ready true)
-                      (tset :state :error)
-                      (tset :error err))
-                    true))]
+                (do
+                  (doto p
+                    (tset :val nil)
+                    (tset :ready true)
+                    (tset :state :error)
+                    (tset :error err))
+                  true))]
     (when (not scheduler.current-thread)
       (async.run :once))
     res))
@@ -729,8 +739,9 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
                          (match (socket.select nil [client] 0)
                            (_ [c]) (match (client:send val i)
                                      (nil :timeout j)
-                                     (do (async.park)
-                                         (put _ val j))
+                                     (do
+                                       (async.park)
+                                       (put _ val j))
                                      (nil :closed)
                                      (close-handler client)
                                      _ true)
@@ -738,15 +749,17 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
                   :take (fn take [_ data]
                           (match (socket.select [client] nil 0)
                             [c] (match (client:receive 256)
-                                  data* (do (async.park)
-                                            (take _ (t/append (or data []) data*)))
+                                  data* (do
+                                          (async.park)
+                                          (take _ (t/append (or data []) data*)))
                                   (nil :closed data*)
                                   (close-handler client)
                                   (nil :timeout "")
                                   (and data (t/concat data))
                                   (nil :timeout data*)
-                                  (do (async.park)
-                                      (take _ (t/append (or data []) data*))))
+                                  (do
+                                    (async.park)
+                                    (take _ (t/append (or data []) data*))))
                             _ (and data (t/concat data))))}}
        (setmetatable {})
        async.chan))
@@ -757,9 +770,10 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
   (->> {:__name "socket-server-buffer"
         :__fennelview pp
         :__index {:take #(match (server:accept)
-                           client (do (client:settimeout 0)
-                                      (tset conns server client true)
-                                      client)
+                           client (do
+                                    (client:settimeout 0)
+                                    (tset conns server client true)
+                                    client)
                            _ nil)
                   :put #true}}
        (setmetatable {})
@@ -775,7 +789,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
        data (let [res (handler data client)]
               (when server.running?
                 (async.put client res))
-                (loop))
+              (loop))
        nil (when server.running?
              (loop))))))
 
@@ -826,7 +840,7 @@ Starting a server, connecting a client, sending, and receiving a value:
     _ (io.stdout:write (string.format "server started at %s:%s\n" (server:getsockname)))
     _ chan
     (catch
-        (nil err) (error (.. "unable to start the server: " err)))))
+     (nil err) (error (.. "unable to start the server: " err)))))
 
 (fn tcp.stop-server [server]
   "Stop the `server` obtained from the `start-server` function.
@@ -840,7 +854,7 @@ processing data received from clients."
     client (client:settimeout 0)
     _ (make-socket-channel client (fn [] (client:close) nil))
     (catch
-        (nil err) (error err))))
+     (nil err) (error err))))
 
 (fn tcp.get-host [{:socket server}]
   "Get the hostname of the `server`."
@@ -885,7 +899,7 @@ processing data received from clients."
   ;; `stdin`, `stdout`, and `stderr` descriptors are used.  If anyone knows
   ;; a better/more clever way of doing it a patch is much appreciated
   (fn read [spec]
-    (let [data (async.take client-chan)]
+    (let  [data (async.take client-chan)]
       (match spec
         :a data
         :n (let [(num data) (: (trim-left data) :match "^([^%s]*)(%s?.-)$")]
