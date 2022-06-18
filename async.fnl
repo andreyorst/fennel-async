@@ -488,6 +488,14 @@ See `buffer` for more info."
         (c/yield park-condition)
         (async.run :once))))
 
+(fn try-put [buffer val]
+  (assert (not= nil val) "value must not be nil")
+  (let [status (buffer:put val)]
+    (if scheduler.current-thread
+        (c/yield park-condition)
+        (async.run :once))
+    status))
+
 (fn async.put [chan val]
   "Put a value `val` to a channel `chan`."
   (let [{: buffer : xform} chan]
@@ -497,6 +505,17 @@ See `buffer` for more info."
         (put buffer val))
     (async.run :once)
     true))
+
+(fn async.try-put [chan val]
+  "Try to put a value `val` to a channel `chan`.
+Will not retry."
+  (let [{: buffer : xform} chan
+        status (if xform
+                   (match (xform val)
+                     val* (try-put buffer val*))
+                   (try-put buffer val))]
+    (async.run :once)
+    status))
 
 (fn async.take [chan timeout timeout-val]
   "Take a value from a channel `chan`.  If `timeout` is a number,
