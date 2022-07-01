@@ -1,4 +1,4 @@
-## async.fnl v0.0.3 (2022-07-01)
+## async.fnl v0.0.3 (???)
 
 - Change from single-file library to a multi-module with `init.fnl` and `init-macros.fnl`.
   The library now can be required via `(require :async)` and `(require-macros :async)` where `async` is the name of the directory of the library.

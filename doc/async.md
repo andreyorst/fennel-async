@@ -1,4 +1,4 @@
-# Async.fnl (v0.0.1)
+# Async (v0.0.1)
 A library for asynchronous programming for the Fennel language and Lua
 runtime.
 
@@ -45,7 +45,6 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`restart-agent`](#restart-agent)
 - [`chan`](#chan)
 - [`put`](#put)
-- [`try-put`](#try-put)
 - [`take`](#take)
 - [`buffer`](#buffer)
 - [`dropping-buffer`](#dropping-buffer)
@@ -54,9 +53,11 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`tcp.start-server`](#tcpstart-server)
 - [`tcp.connect`](#tcpconnect)
 - [`tcp.stop-server`](#tcpstop-server)
+- [`take-all`](#take-all)
 - [`tcp.get-host`](#tcpget-host)
 - [`tcp.get-port`](#tcpget-port)
 - [`tcp.start-repl`](#tcpstart-repl)
+- [`try-put`](#try-put)
 
 ## `queue`
 Function signature:
@@ -260,16 +261,6 @@ Function signature:
 
 Put a value `val` to a channel `chan`.
 
-## `try-put`
-Function signature:
-
-```
-(try-put chan val)
-```
-
-Try to put a value `val` to a channel `chan`.
-Will not retry.
-
 ## `take`
 Function signature:
 
@@ -396,7 +387,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
 Function signature:
 
 ```
-(tcp.start-server handler {:port port :host host})
+(tcp.start-server handler {:host host :port port})
 ```
 
 Start socket server on a given `host` and `port` with `handler` being
@@ -417,7 +408,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 Function signature:
 
 ```
-(tcp.connect {:port port :host host})
+(tcp.connect {:host host :port port})
 ```
 
 Connect to the server via `host` and `port`.
@@ -432,6 +423,16 @@ Function signature:
 Stop the `server` obtained from the `start-server` function.
 This also closes all connections, and stops any threads that currently
 processing data received from clients.
+
+## `take-all`
+Function signature:
+
+```
+(take-all chan timeout)
+```
+
+Take all values from the channel `chan` until the `timeout` happens
+and returns a sequential table.
 
 ## `tcp.get-host`
 Function signature:
@@ -459,6 +460,16 @@ Function signature:
 ```
 
 Create a socket REPL with given `conn` and `opts`.
+
+## `try-put`
+Function signature:
+
+```
+(try-put chan val)
+```
+
+Try to put a value `val` to a channel `chan`.
+Will not retry.
 
 
 ---
