@@ -112,8 +112,9 @@ finished.
        (do (park#)
            (do ,...)))))
 
-(fn a/fcollect [bindings ...]
-  "Asyncronous `fcollect` table comprehension.
+(comment
+ (fn a/fcollect [bindings ...]
+   "Asyncronous `fcollect` table comprehension.
 
 Accepts `park-form` before `bindings` to call before the body of the
 loop on each iteration. If `park-form` is a list, evaluates it as is,
@@ -132,10 +133,10 @@ finished.
   (assert-not p.ready)                ; promise is still not delivered
   (assert-eq (await p) [2 3 4 5]))    ; awaiting realizes the loop
 ```"
-  `(let [{:park park#} (require ,async)]
-     (fcollect ,bindings
-       (do (park#)
-           (do ,...)))))
+   `(let [{:park park#} (require ,async)]
+      (fcollect ,bindings
+        (do (park#)
+            (do ,...))))))
 
 (fn a/accumulate [bindings ...]
   "Asyncronous `accumulate` variant.
@@ -163,7 +164,7 @@ finished.
            (do ,...)))))
 
 {: a/accumulate
- : a/fcollect
+ ;; : a/fcollect ; TODO: not yet released
  : a/icollect
  : a/collect
  : a/while
