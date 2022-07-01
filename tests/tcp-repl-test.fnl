@@ -1,5 +1,5 @@
 (require-macros :fennel-test)
-(local async (require :async))
+(local async (require :init))
 (local tcp async.tcp)
 
 (local lprint _G.print)

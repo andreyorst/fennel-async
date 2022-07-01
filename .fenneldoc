@@ -14,7 +14,8 @@
  :order "alphabetic"
  :out-dir "./doc"
  :project-copyright "Copyright (C) 2021 Andrey Listopadov"
- :modules-info {:async.fnl {:description "A library for asynchronous programming for the Fennel language and Lua
+ :modules-info {:init.fnl {:name "async"
+                           :description "A library for asynchronous programming for the Fennel language and Lua
 runtime.
 
 This library provides facilities for asynchronous programming by
@@ -41,14 +42,24 @@ promise is awaited in the main thread, blocking the execution, while
 threads are cooperating. As a result, `42` is printed.
 
 For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-async/-/wikis/home)."
-                            :doc-order ["queue" "run" "await" "sleep" "park"
-                                        "promise" "deliver" "error!" "zip" "alt"
-                                        "agent" "send" "agent-error" "restart-agent"
-                                        "chan" "put" "try-put" "take" "buffer" "dropping-buffer"
-                                        "io.read" "io.write"
-                                        "tcp.start-server" "tcp.connect" "tcp.stop-server"]}}
+                           :doc-order ["queue" "run" "await" "sleep" "park"
+                                       "promise" "deliver" "error!" "zip" "alt"
+                                       "agent" "send" "agent-error" "restart-agent"
+                                       "chan" "put" "take" "buffer" "dropping-buffer"
+                                       "io.read" "io.write"
+                                       "tcp.start-server" "tcp.connect" "tcp.stop-server"]}
+                :init-macros.fnl {:name "async-macros"
+                                  :description "Macros to use in asyncronous context of a library.
+
+These macros provide a common parking interface to run in both
+synchronous and asynchronous contexts, thus can be used as a drop-in
+replacement for inbuilt iteration forms."}}
  :project-license "[MIT](https://gitlab.com/andreyorst/fennel-async/-/raw/master/LICENSE)"
  :project-version "v0.0.1"
  :sandbox false
- :test-requirements {:async.fnl "(require-macros :fennel-test)"}
+ :test-requirements {:init.fnl "(require-macros :fennel-test)"
+                     :init-macros.fnl "(require-macros :fennel-test)
+                                       (require-macros :init-macros)
+                                       (local { : park : await : queue : chan : promise : deliver : run : put : take-all}
+                                         (require :init))"}
  :toc true}

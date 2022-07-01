@@ -1,28 +1,3 @@
-;;; async.fnl
-
-(comment
-  MIT License
-
-  Copyright (c) 2022 Andrey Listopadov
-
-  Permission is hereby granted‚ free of charge‚ to any person obtaining a copy
-  of this software and associated documentation files (the "Software")‚ to deal
-  in the Software without restriction‚ including without limitation the rights
-  to use‚ copy‚ modify‚ merge‚ publish‚ distribute‚ sublicense‚ and/or sell
-  copies of the Software‚ and to permit persons to whom the Software is
-  furnished to do so‚ subject to the following conditions：
-
-  The above copyright notice and this permission notice shall be included in all
-  copies or substantial portions of the Software.
-
-  THE SOFTWARE IS PROVIDED "AS IS"‚ WITHOUT WARRANTY OF ANY KIND‚ EXPRESS OR
-  IMPLIED‚ INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY‚
-  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM‚ DAMAGES OR OTHER
-  LIABILITY‚ WHETHER IN AN ACTION OF CONTRACT‚ TORT OR OTHERWISE‚ ARISING FROM‚
-  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-  SOFTWARE.)
-
 (local {:create c/create
         :resume c/resume
         :yield c/yield
@@ -557,6 +532,19 @@ value wasn't delivered, returns the `timeout-val`."
     (async.run :once)
     res))
 
+(fn async.take-all [chan timeout]
+  "Take all values from the channel `chan` until the `timeout` happens
+and returns a sequential table."
+  (assert (and (= :number (type timeout)) (>= timeout 0))
+          "timeout must be a positive number")
+  (let [done {}]
+    ((fn loop [c t n]
+       (match (async.take c timeout done)
+         done t
+         v (loop c (doto t (tset (+ n 1) v)) (+ n 1))
+         nil (error "channel returned nil value" 2)))
+     chan [] 0)))
+
 (fn async.chan [buffer-or-size xform]
   "Create a channel with a set buffer and an optional transforming function.
 
@@ -724,7 +712,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
         (async.deliver p true)))
     p))
 
-;;; TCP (experimental)
+;;; TCP
 
 (local tcp {})
 (local closed {})

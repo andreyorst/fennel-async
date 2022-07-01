@@ -16,10 +16,11 @@
         : chan
         : put
         : take
+        : take-all
         : buffer
         : dropping-buffer
         &as async}
-  (require :async))
+  (require :init))
 
 (use-fixtures :each (fn [t] (t) (run)))
 
@@ -146,6 +147,10 @@
       (assert-eq :no-value (take c 10 :no-value))
       (put c "g")
       (assert-eq "g" (take c 0 :no-value))))
+  (testing "take-all with timeout"
+    (let [c (chan)]
+      (for [i 1 4] (put c i))
+      (assert-eq [1 2 3 4] (take-all c 100))))
   (testing "incorrect size type"
     (assert-not (pcall chan "1"))))
 
