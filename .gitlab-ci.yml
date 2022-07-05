@@ -32,11 +32,10 @@ Lua:
         - >
             apk add -q
             lua5.2 lua5.3 lua5.3-dev lua5.4 luarocks5.3
-            git make gcc musl-dev
+            git make gcc musl-dev lua-socket
         - export LUA=lua5.3
         - luarocks-5.3 install fennel "$fennel_ver"
         - luarocks-5.3 install luacov
-        - luarocks-5.3 install luasocket
         - luarocks-5.3 install cluacov
         - luarocks-5.3 install luacov-cobertura
         - *fenneldoc
@@ -60,7 +59,9 @@ Luajit:
     stage: test
     timeout: 2m
     before_script:
-        - dnf install -y -q lua luajit git make
+        - dnf install -y -q lua lua-devel luajit git gcc make luarocks
+        - luarocks install luasocket
         - *fennel
+        - eval "$(luarocks path)"
     script:
         - LUA=luajit make test
