@@ -4,6 +4,10 @@
   The library now can be required via `(require :async)` and `(require-macros :async)` where `async` is the name of the directory of the library.
 - Add `take-all` function.
 - Add TCP REPL support for remote code evaluation.
+- Make server's handler function optionally accept a client as a second argument.
+- Add `put-all` function to put a table of values onto a channel at once.
+- Add `zip*` function to wait for a table of promises.
+- Make either `luasocket` or `posix` a mandatory requirement.
 
 ## async.fnl v0.0.2 (2022-06-13)
 
