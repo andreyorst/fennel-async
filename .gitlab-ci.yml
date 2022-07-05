@@ -24,14 +24,14 @@ variables:
     make install
     cd "$CI_PROJECT_DIR"
 
-Lua:
+Test:
     image: alpine:edge
     stage: test
     timeout: 2m
     before_script:
         - >
             apk add -q
-            lua5.2 lua5.3 lua5.3-dev lua5.4 luarocks5.3
+            lua5.2 lua5.3 lua5.3-dev lua5.4 luajit luarocks5.3
             git make gcc musl-dev lua-socket
         - export LUA=lua5.3
         - luarocks-5.3 install fennel "$fennel_ver"
@@ -40,7 +40,7 @@ Lua:
         - luarocks-5.3 install luacov-cobertura
         - *fenneldoc
     script:
-        - LUAEXECUTABLES="lua5.2 lua5.3 lua5.4" make testall
+        - LUAEXECUTABLES="lua5.2 lua5.3 lua5.4 luajit" make testall
         - make luacov
         - tail luacov.report
     artifacts:
@@ -54,14 +54,14 @@ Lua:
 # uses Moonjit implementation, which is different from what I'm
 # working with, so Fedora 33 image is used, which as of this moment
 # has latest Luajit available
-Luajit:
-    image: fedora:33
-    stage: test
-    timeout: 2m
-    before_script:
-        - dnf install -y -q lua lua-devel luajit git gcc make luarocks
-        - luarocks install --local luasocket
-        - *fennel
-        - eval "$(luarocks path)"
-    script:
-        - LUA=luajit make test
+# Luajit:
+#     image: fedora:33
+#     stage: test
+#     timeout: 2m
+#     before_script:
+#         - dnf install -y -q lua lua-devel luajit git gcc make luarocks
+#         - luarocks install luasocket
+#         - *fennel
+#         - eval "$(luarocks path)"
+#     script:
+#         - LUA=luajit make test
