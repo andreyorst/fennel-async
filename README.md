@@ -8,7 +8,7 @@ With `luasocket` the `tcp` module becomes available, and asynchronous socket int
 
 ## Installation
 
-Grab the [async.fnl](https://gitlab.com/andreyorst/fennel-async/-/raw/main/async.fnl) file and put it into your project or somewhere in `fennel-path`.
+Clone the library into your project or somewhere in `fennel-path`.
 
 ## Design
 
