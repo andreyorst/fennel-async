@@ -60,7 +60,7 @@ Luajit:
     timeout: 2m
     before_script:
         - dnf install -y -q lua lua-devel luajit git gcc make luarocks
-        - luarocks install luasocket
+        - luarocks install --local luasocket
         - *fennel
         - eval "$(luarocks path)"
     script:
