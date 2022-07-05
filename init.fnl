@@ -4,7 +4,6 @@
         :resume c/resume
         :yield c/yield
         :status c/status
-        :running c/running
         :close c/close}
   coroutine)
 
@@ -15,10 +14,17 @@
 
 (local t/unpack (or table.unpack _G.unpack))
 
-(fn t/pack [...] (doto [...] (tset :n (select "#" ...))))
+(fn t/pack [...]
+  (doto [...] (tset :n (select "#" ...))))
 
 (fn t/append [t val]
   (doto t (tset (+ 1 (length t)) val)))
+
+(local {:modf m/modf
+        :min m/min
+        :huge m/huge
+        :random m/random}
+  math)
 
 (fn pp [self]
   (.. "#<" (tostring self) ">"))
@@ -48,10 +54,11 @@
            (+ s (/ ns 1000000000))))
       (error "No `gettime` function available on this system. This library requires luasocket or luaposix.")))
 
+
 (fn async.time []
   "Get execution time in milliseconds."
-  (let [c (time)]
-    (values c (* c 1000))))
+  (pick-values 1
+    (m/modf (* (time) 1000))))
 
 
 ;;; Queues
@@ -72,7 +79,7 @@
                    (set done true))))}}))
 
 (fn queue []
-  ;; default queue.  Task order is based on Lua hashing function
+  ;; The default queue.  Task order is based on Lua hashing function
   (setmetatable
    {}
    {:__index
@@ -117,7 +124,6 @@
     (tset :wake-time wake-time)
     (tset :state :sleep)))
 
-(local m/min math.min)
 (fn set-shortest-time! [sleep-time]
   ;; Sets the shortest time scheduler can spent sleeping before going
   ;; to the next iteration.
@@ -125,8 +131,6 @@
        (match scheduler.shortest-sleep-time
          t (m/min t sleep-time)
          _ sleep-time)))
-
-(local lp _G.print)
 
 (fn do-task [queue {: task : promise &as thread}]
   ;; Execute a given task once and change its state
@@ -234,9 +238,8 @@ own sub-tasks, these sub-tasks will not be canceled."
 
 (local sleep
   (if socket socket.sleep
-      posix (let [modf math.modf]
-              #(let [(s ms) (modf $)]
-                 (posix.nanosleep s (* 1000000 1000 ms))))
+      posix #(let [(s ms) (m/modf $)]
+               (posix.nanosleep s (* 1000000 1000 ms)))
       (error "no sleep function available")))
 
 (fn scheduler.sleep [s block?]
@@ -420,7 +423,7 @@ By design of this library, buffers can't contain `nil' values, and
 `nil' is reserved as a marker of an empty buffer."
   (and size (assert (= :number (type size)) "size must be a number"))
   (assert (not (: (tostring size) :match "%.")) "size must be integer")
-  (setmetatable {:size (or size math.huge)}
+  (setmetatable {:size (or size m/huge)}
                 {:__name "buffer"
                  :__fennelview pp
                  :__index {:put (fn [buffer val]
@@ -672,7 +675,7 @@ Does nothing if promise was already delivered."
 
 (fn shuffle! [t]
   (for [i (length t) 2 -1]
-    (let [j (math.random i)
+    (let [j (m/random i)
           ti (. t i)]
       (tset t i (. t j))
       (tset t j ti)))
@@ -769,23 +772,23 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
         :__fennelview pp
         :__index {:put (fn put [_ val i]
                          (match (socket.select nil [client] 0)
-                           (_ [c]) (match (client:send val i)
+                           (_ [c]) (match (c:send val i)
                                      (nil :timeout j)
                                      (do
                                        (async.park)
                                        (put _ val j))
                                      (nil :closed)
-                                     (close-handler client)
+                                     (close-handler c)
                                      _ true)
                            _ false))
                   :take (fn take [_ data]
                           (match (socket.select [client] nil 0)
-                            [c] (match (client:receive 256)
+                            [c] (match (c:receive 256)
                                   data* (do
                                           (async.park)
                                           (take _ (t/append (or data []) data*)))
                                   (nil :closed data*)
-                                  (close-handler client)
+                                  (close-handler c)
                                   (nil :timeout "")
                                   (and data (t/concat data))
                                   (nil :timeout data*)
