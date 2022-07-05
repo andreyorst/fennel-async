@@ -9,12 +9,14 @@
         : alt
         : deliver
         : zip
+        : zip*
         : agent
         : send
         : agent-error
         : restart-agent
         : chan
         : put
+        : put-all
         : take
         : take-all
         : buffer
@@ -100,6 +102,10 @@
       (assert-eq c6 {:buffer {:size math.huge} : xform})
       (assert-eq c7 {:buffer {:size 10} : xform})
       (assert-eq c7 c8)))
+  (testing "put all, take all"
+    (let [c (chan)]
+      (put-all c ["a" "b" "c"])
+      (assert-eq ["a" "b" "c"] (take-all c 100))))
   (testing "put and take"
     (let [c1 (chan)
           c2 (chan 10)]
@@ -183,7 +189,37 @@
           p2 (promise)]
       (queue #(deliver p2 (+ 1 (await p1))))
       (queue #(do (park) (deliver p1 30)))
-      (assert-eq {1 30 2 31 :n 2} (zip p1 p2)))))
+      (assert-eq {1 30 2 31 :n 2} (zip p1 p2)))
+    (let [p1 (promise)
+          p2 (promise)]
+      (queue #(deliver p2 (+ 1 (await p1))))
+      (queue #(do (park) (deliver p1 30)))
+      (assert-eq {1 30 2 31 :n 2} (zip* [p1 p2])))))
+
+(deftest cancel-test
+  (testing "canceling a task before it's done"
+    (let [res []
+          p (async (fn [] (park) (tset res 1 42)))]
+      (assert-eq res [])
+      (async.cancel p)
+      (assert-eq res [])
+      (async.await p)
+      (assert-eq res [])))
+  (testing "canceling a task after it's done"
+    (let [res []
+          p (async (fn [] (park) (tset res 1 42)))]
+      (async.await p)
+      (assert-eq res [42])
+      (async.cancel p)
+      (assert-eq res [42])))
+  (testing "canceling a task after multiple times"
+    (let [res []
+          p (async (fn [] (park) (tset res 1 42)))]
+      (async.cancel p)
+      (async.cancel p)
+      (assert-eq res [])
+      (async.await p)
+      (assert-eq res []))))
 
 (deftest park-test
   (testing "parking main thread does nothing"

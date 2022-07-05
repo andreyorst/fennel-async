@@ -1,8 +1,11 @@
+(local async {:io {}})
+
 (local {:create c/create
         :resume c/resume
         :yield c/yield
         :status c/status
-        :running c/running}
+        :running c/running
+        :close c/close}
   coroutine)
 
 (local {:insert t/insert
@@ -21,7 +24,7 @@
   (.. "#<" (tostring self) ">"))
 
 
-;;; Optional dependencies
+;;; Dependencies (either one is required)
 
 (local socket
   (match (pcall require :socket)
@@ -36,15 +39,19 @@
 
 ;;; Clock
 
-(local clock
+(local time
   (if (?. socket :gettime)
       socket.gettime
       (?. posix :clock_gettime)
       (let [gettime posix.clock_gettime]
-        #(let [(s ms) (gettime)]
-           (tonumber (.. s "." ms))))
-      (?. os :clock) os.clock
-      (error "no clock function available on this system")))
+        #(let [(s ns) (gettime)]
+           (+ s (/ ns 1000000000))))
+      (error "No `gettime` function available on this system. This library requires luasocket or luaposix.")))
+
+(fn async.time []
+  "Get execution time in milliseconds."
+  (let [c (time)]
+    (values c (* c 1000))))
 
 
 ;;; Queues
@@ -59,6 +66,8 @@
                (var done false)
                (each [i t (ipairs self) :until done]
                  (when (= t task)
+                   (when (and c/close task.task)
+                     (c/close task.task))
                    (table.remove self i)
                    (set done true))))}}))
 
@@ -68,12 +77,13 @@
    {}
    {:__index
     {:put (fn [self task] (tset self task task))
-     :remove (fn [self task] (tset self task nil))}}))
+     :remove (fn [self task] (match (. self task)
+                               t (do (when (and c/close t.task)
+                                       (c/close t.task))
+                                     (tset self t nil))))}}))
 
 
 ;;; Scheduler
-
-(local async {:io {}})
 
 (local scheduler
   {:queue (queue)
@@ -90,9 +100,10 @@
 (fn scheduler.schedule [queue task]
   ;; Schedule a task and return a promise object
   (let [p (async.promise)
-        c (c/create (fn [] (async.deliver p (task))))]
-    (queue:put {:state :suspended :promise p :task c})
-    p))
+        c (c/create (fn [] (async.deliver p (task))))
+        task {:state :suspended :promise p :task c}]
+    (queue:put task)
+    (doto p (tset :task task))))
 
 (fn suspend! [thread]
   ;; Set thread's state to the suspended state
@@ -121,7 +132,7 @@
   ;; Execute a given task once and change its state
   (match (c/resume task)
     (true sleep-condition wake-time)
-    (let [sleep-time (- wake-time (clock))
+    (let [sleep-time (- wake-time (time))
           sleep-time (if (< sleep-time 0) 0 sleep-time)]
       (sleep! thread wake-time)
       (set-shortest-time! sleep-time))
@@ -143,7 +154,7 @@
 
 (fn do-sleep [queue thread]
   ;; Check if any of the tasks can be waked up based on current time
-  (let [now (clock)
+  (let [now (time)
         {: wake-time} thread
         sleep-time (- wake-time now)]
     (if (>= now wake-time)
@@ -154,7 +165,7 @@
   ;; Run each task from the task queue.  Returns `true` if there are
   ;; remaining tasks to execute, and amount of time spent executing.
   (set scheduler.shortest-sleep-time nil)
-  (let [start-time (clock)
+  (let [start-time (time)
         {: queue : agent-queue} scheduler]
     (each [_ queue (ipairs [queue agent-queue])]
       (each [_ thread (pairs queue)]
@@ -167,7 +178,7 @@
                     (next agent-queue))
                 true
                 false)
-            (- (clock) start-time)
+            (- (time) start-time)
             (match scheduler.shortest-sleep-time
               (where t (> t 0)) t))))
 
@@ -210,25 +221,28 @@ module table is an alias to this function."
       (scheduler.run))
     p))
 
+(fn async.cancel [p]
+  "Try to cancel a promise.
+
+If a given promise `p` has a task associated with it, this task will
+be canceled.  Note that, if the task has been running and spawned its
+own sub-tasks, these sub-tasks will not be canceled."
+  (p:close))
+
 
 ;;; Sleep
 
 (local sleep
-  (if socket #(socket.sleep $)
+  (if socket socket.sleep
       posix (let [modf math.modf]
               #(let [(s ms) (modf $)]
                  (posix.nanosleep s (* 1000000 1000 ms))))
-      ;; otherwise do a busy sleep, as there's no good way to detect
-      ;; what's supported with os.execute (e.g. there's no sleep on
-      ;; Windows). This chews the CPU, of course.
-      #(let [end (+ (clock) $)]
-         (while (< (clock) end)
-           nil))))
+      (error "no sleep function available")))
 
 (fn scheduler.sleep [s block?]
   (assert (= :number (type s)) "time must be a number")
   (if scheduler.current-thread
-      (c/yield sleep-condition (+ (clock) s))
+      (c/yield sleep-condition (+ (time) s))
       (do
         (var slept 0)
         (var run? true)
@@ -248,7 +262,7 @@ If invoked in a task, puts the thread in a sleeping state and parks.
 Otherwise, if invoked in the main thread, blocks the execution and
 runs the tasks.  If luasocket is available, blocking is done via
 `socket.sleep`.  If luaposix is available, blocking is done via
-`posix.nanosleep`.  Otherwise, a busy loop is used."
+`posix.nanosleep`."
   (scheduler.sleep (/ ms 1000) true))
 
 
@@ -259,26 +273,34 @@ runs the tasks.  If luasocket is available, blocking is done via
 (fn promise.deref [self timeout timeout-val]
   (when timeout
     (assert (= :number (type timeout)) "timeout must be a number"))
-  (when (= self.state :error)
-    (error self.error))
-
   (let [coroutine? scheduler.current-thread
         timeout (and timeout (/ timeout 1000))]
     (var slept 0)
     (if timeout
         (while (and (not self.ready) (< slept timeout))
-          (let [start (clock)]
+          (let [start (time)]
             (if coroutine?
                 (c/yield sleep-condition (+ start internal-sleep-time))
                 (scheduler.sleep internal-sleep-time false))
-            (set slept (+ slept (- (clock) start)))))
+            (set slept (+ slept (- (time) start)))))
         (while (not self.ready)
           (if coroutine?
               (c/yield park-condition)
               (async.run :once))))
     (if (and timeout (>= slept timeout) (not self.ready))
         timeout-val
-        self.val)))
+        (if (= self.state :error)
+            (error self.error)
+            self.val))))
+
+(fn promise.close [self]
+  ;; Try to cancel a promise that is a task.
+  (match self.task
+    task (when (not self.ready)
+           (scheduler.queue:remove task)
+           (set self.ready true)
+           (set self.task nil)
+           (set self.state :cancelled))))
 
 (fn async.promise []
   "Create a promise object.
@@ -488,6 +510,17 @@ See `buffer` for more info."
     (async.run :once)
     true))
 
+(fn async.put-all [chan vals]
+  "Put a each value from `vals` to a channel `chan`."
+  (let [{: buffer : xform} chan]
+    (each [_ val (ipairs vals)]
+      (if xform
+          (match (xform val)
+            val* (put buffer val*))
+          (put buffer val)))
+    (async.run :once)
+    true))
+
 (fn async.try-put [chan val]
   "Try to put a value `val` to a channel `chan`.
 Will not retry."
@@ -510,11 +543,11 @@ value wasn't delivered, returns the `timeout-val`."
         loop (if timeout
                  (fn loop [val]
                    (if (and (= nil val) (< slept timeout))
-                       (let [start (clock)]
+                       (let [start (time)]
                          (if coroutine?
                              (c/yield sleep-condition (+ start internal-sleep-time))
                              (scheduler.sleep internal-sleep-time false))
-                         (set slept (+ slept (- (clock) start)))
+                         (set slept (+ slept (- (time) start)))
                          (loop (buffer:take)))
                        val))
                  (fn loop [val]
@@ -598,6 +631,17 @@ the `:n` key to keep any possible `nil` values."
     (for [i 1 promises.n]
       (tset promises i (: (. promises i) :deref)))
     promises))
+
+(fn async.zip* [promises]
+  "Await for all promises in a table `promises`.
+
+Returns a table with promise results and the number of promises underc
+the `:n` key to keep any possible `nil` values."
+  (let [len (length promises)
+        res {:n len}]
+    (for [i 1 len]
+      (tset res i (: (. promises i) :deref)))
+    res))
 
 (fn async.await [p timeout timeout-val]
   "Get the value of a promise or an agent.
