@@ -1,4 +1,4 @@
-# Async (v0.0.1)
+# Async (v0.0.3-dev)
 A library for asynchronous programming for the Fennel language and Lua
 runtime.
 
@@ -53,11 +53,15 @@ For more examples see the project's [wiki](https://gitlab.com/andreyorst/fennel-
 - [`tcp.start-server`](#tcpstart-server)
 - [`tcp.connect`](#tcpconnect)
 - [`tcp.stop-server`](#tcpstop-server)
+- [`cancel`](#cancel)
+- [`put-all`](#put-all)
 - [`take-all`](#take-all)
 - [`tcp.get-host`](#tcpget-host)
 - [`tcp.get-port`](#tcpget-port)
 - [`tcp.start-repl`](#tcpstart-repl)
+- [`time`](#time)
 - [`try-put`](#try-put)
+- [`zip*`](#zip-1)
 
 ## `queue`
 Function signature:
@@ -111,7 +115,7 @@ If invoked in a task, puts the thread in a sleeping state and parks.
 Otherwise, if invoked in the main thread, blocks the execution and
 runs the tasks.  If luasocket is available, blocking is done via
 `socket.sleep`.  If luaposix is available, blocking is done via
-`posix.nanosleep`.  Otherwise, a busy loop is used.
+`posix.nanosleep`.
 
 ## `park`
 Function signature:
@@ -387,7 +391,7 @@ complete.  Accepts optional `mode`.  By default the `mode` is set to
 Function signature:
 
 ```
-(tcp.start-server handler {:host host :port port})
+(tcp.start-server handler {:port port :host host})
 ```
 
 Start socket server on a given `host` and `port` with `handler` being
@@ -408,7 +412,7 @@ Starting a server, connecting a client, sending, and receiving a value:
 Function signature:
 
 ```
-(tcp.connect {:host host :port port})
+(tcp.connect {:port port :host host})
 ```
 
 Connect to the server via `host` and `port`.
@@ -423,6 +427,28 @@ Function signature:
 Stop the `server` obtained from the `start-server` function.
 This also closes all connections, and stops any threads that currently
 processing data received from clients.
+
+## `cancel`
+Function signature:
+
+```
+(cancel p)
+```
+
+Try to cancel a promise.
+
+If a given promise `p` has a task associated with it, this task will
+be canceled.  Note that, if the task has been running and spawned its
+own sub-tasks, these sub-tasks will not be canceled.
+
+## `put-all`
+Function signature:
+
+```
+(put-all chan vals)
+```
+
+Put a each value from `vals` to a channel `chan`.
 
 ## `take-all`
 Function signature:
@@ -461,6 +487,15 @@ Function signature:
 
 Create a socket REPL with given `conn` and `opts`.
 
+## `time`
+Function signature:
+
+```
+(time)
+```
+
+Get execution time in milliseconds.
+
 ## `try-put`
 Function signature:
 
@@ -471,10 +506,22 @@ Function signature:
 Try to put a value `val` to a channel `chan`.
 Will not retry.
 
+## `zip*`
+Function signature:
+
+```
+(zip* promises)
+```
+
+Await for all promises in a table `promises`.
+
+Returns a table with promise results and the number of promises underc
+the `:n` key to keep any possible `nil` values.
+
 
 ---
 
-Copyright (C) 2021 Andrey Listopadov
+Copyright (C) 2021-2022 Andrey Listopadov
 
 License: [MIT](https://gitlab.com/andreyorst/fennel-async/-/raw/master/LICENSE)
 

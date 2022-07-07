@@ -22,7 +22,7 @@
         : buffer
         : dropping-buffer
         &as async}
-  (require :init))
+  (require :async))
 
 (use-fixtures :each (fn [t] (t) (run)))
 

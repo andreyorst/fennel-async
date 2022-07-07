@@ -1,8 +1,8 @@
 LUA ?= lua
 FENNEL ?= fennel
 VERSION ?=
-FNLSOURCES = init.fnl
-FNLMACROS = init-macros.fnl
+FNLSOURCES = async.fnl
+FNLMACROS =
 FNLTESTS = $(wildcard tests/*.fnl)
 LUATESTS = $(FNLTESTS:.fnl=.lua)
 FNLDOCS = $(FNLMACROS) $(FNLSOURCES)

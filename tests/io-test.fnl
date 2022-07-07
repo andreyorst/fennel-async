@@ -1,5 +1,5 @@
 (require-macros :fennel-test)
-(local async (require :init))
+(local async (require :async))
 
 (deftest async-io-test
   (testing "reading file to string"

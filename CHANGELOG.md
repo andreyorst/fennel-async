@@ -1,7 +1,5 @@
 ## async.fnl v0.0.3 (???)
 
-- Change from single-file library to a multi-module with `init.fnl` and `init-macros.fnl`.
-  The library now can be required via `(require :async)` and `(require-macros :async)` where `async` is the name of the directory of the library.
 - Add `take-all` function.
 - Add TCP REPL support for remote code evaluation.
 - Make server's handler function optionally accept a client as a second argument.

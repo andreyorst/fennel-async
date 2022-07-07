@@ -1,5 +1,5 @@
 (require-macros :fennel-test)
-(local async (require :init))
+(local async (require :async))
 (local tcp async.tcp)
 
 (when tcp
