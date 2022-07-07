@@ -31,7 +31,7 @@ a new thread
 ```
 
 As can be seen, when creating a new thread, which just prints a message, the message is immediately displayed, and a `promise` is returned.
-It may seem like if `print` ran in background, but in reality, threads are ran just after creation.
+It may seem like if `print` ran in background, but in reality, all threads run once after creation.
 
 Here are all actions that, when done on the main thread, cause asynchronous threads to advance:
 
@@ -59,7 +59,7 @@ slept 1s
 nil
 ```
 
-If the `run` function wasn't executed immediately, the message will displayed right away, because the thread slept longer than one second, and was ready to be resumed.
+If the `run` function wasn't executed immediately, the message will be displayed right away, because the thread slept longer than one second, and was ready to be resumed.
 As a more complete example, consider three threads that sleep different amount of time:
 
 ``` fennel

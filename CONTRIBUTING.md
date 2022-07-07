@@ -39,7 +39,7 @@ When changing existing functions make sure that all tests pass.
 If some tests do not pass, make sure that these tests are written to test this function.
 If not, then, perhaps, you've broken something horribly.
 
-Before committing changes, you must run tests with `make test`, and all of the tests must pass without errors.
+Before committing changes, you must run tests with `make test`, and all tests must pass without errors.
 Consider checking test coverage with `make luacov` and rendering it with your preferred reporter.
 The Makefile also has a `luacov-console` target, which can be used to see coverage of Lua code directly in the terminal.
 
@@ -47,23 +47,23 @@ The Makefile also has a `luacov-console` target, which can be used to see covera
 
 If you've added new code, make sure it is covered not only by tests but also by documentation.
 Exported functions should be documented directly in the code, by using the docstring feature of the language.
-This way this documentation can be exported to markdown later on.
+This way this documentation can be exported to Markdown later on.
 Private functions can be documented via comments in place of docstrings to save some space by not including docs for private functions in the compiler metadata table.
 
 Documentation files use Markdown format, as it is widely supported and can be read without any special software.
 Please make sure to follow the existing style of documentation, which can be shortly described as:
 
--   One sentence per line.
-    This makes it easier to see changes while browsing history.
--   No indentation of text after headings.
-    This makes little sense with a one-sentence per line approach anyway.
--   No empty lines after headings.
--   Amount of empty lines in the text should be:
-    -   Single empty lines between paragraphs.
-    -   Double empty lines before top-level headings.
-    -   Single empty lines before other headings.
--   Consider using spell checking.
-    If you find a word not known by the dictionary, please add it to the `LocalWords` section at the bottom of the document.
+- One sentence per line.
+  This makes it easier to see changes while browsing Git history.
+- No indentation of text after headings.
+  This makes little sense with a one-sentence per line approach anyway.
+- No empty lines after headings.
+- Amount of empty lines in the text should be:
+  - Single empty lines between paragraphs.
+  - Double empty lines before top-level headings.
+  - Single empty lines before other headings.
+- Consider using spell checking.
+  If you find a word not known by the dictionary, please add it to the `LocalWords` section at the bottom of the document.
 
 ### Working with Git
 
